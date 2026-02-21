@@ -1,12 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { Save, Shield, Layout, MessageSquare, Activity } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
-
-const supabase = createClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+import { supabase } from '../supabaseClient';
 
 interface WhatsAppAccount {
     account_name: string;
@@ -44,7 +39,7 @@ const AdminDashboard = () => {
     }, [user]);
 
     const fetchConfigs = async () => {
-        if (!user) return;
+        if (!user || !supabase) return;
         try {
             const { data, error } = await supabase
                 .from('bot_configs')
@@ -55,13 +50,13 @@ const AdminDashboard = () => {
             if (data) setConfigs(data as BotConfig[]);
         } catch (err: any) {
             console.error("❌ Error fetching configs:", err.message);
-            alert("Error al cargar las configuraciones de los bots.");
         } finally {
             setLoading(false);
         }
     };
 
     const fetchLogs = async (configId: string) => {
+        if (!supabase) return;
         try {
             const { data, error } = await supabase
                 .from('messages')
@@ -78,7 +73,7 @@ const AdminDashboard = () => {
     };
 
     const handleSave = async () => {
-        if (!selectedConfig || !user) return;
+        if (!selectedConfig || !user || !supabase) return;
         try {
             const { error } = await supabase
                 .from('bot_configs')
@@ -86,10 +81,10 @@ const AdminDashboard = () => {
                     constitution: selectedConfig.constitution,
                     conversation_structure: selectedConfig.conversation_structure,
                     system_prompt: selectedConfig.system_prompt,
-                    user_id: user.id // Ensure user_id is maintained
+                    user_id: user.id
                 })
                 .eq('id', selectedConfig.id)
-                .eq('user_id', user.id); // Security: only update if it belongs to user
+                .eq('user_id', user.id);
 
             if (error) throw error;
             alert('Configuración guardada en ALEX IO 🚀');
@@ -103,20 +98,17 @@ const AdminDashboard = () => {
 
     return (
         <div className="flex h-screen bg-slate-900 text-slate-100 font-sans">
-            {/* Sidebar */}
             <div className="w-64 bg-slate-950 border-r border-slate-800 p-4">
                 <div className="flex items-center gap-2 mb-8 px-2">
                     <Shield className="text-blue-500" size={24} />
                     <h1 className="text-xl font-bold tracking-tight">ALEX <span className="text-blue-500">IO</span></h1>
                 </div>
-
                 <nav className="space-y-1">
                     {configs.map(cfg => (
                         <button
                             key={cfg.id}
                             onClick={() => { setSelectedConfig(cfg); fetchLogs(cfg.id); }}
-                            className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${selectedConfig?.id === cfg.id ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'
-                                }`}
+                            className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${selectedConfig?.id === cfg.id ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
                         >
                             <div className="font-medium truncate">{cfg.whatsapp_accounts?.account_name}</div>
                             <div className="text-xs opacity-60">{cfg.whatsapp_accounts?.phone_number}</div>
@@ -126,28 +118,18 @@ const AdminDashboard = () => {
                 </nav>
             </div>
 
-            {/* Main Content */}
             <div className="flex-1 flex flex-col overflow-hidden">
                 {selectedConfig ? (
                     <>
-                        {/* Header */}
                         <header className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/50 backdrop-blur">
                             <div className="flex items-center gap-4">
                                 <h2 className="font-semibold text-lg">{selectedConfig.whatsapp_accounts?.account_name}</h2>
-                                <span className="bg-blue-500/10 text-blue-400 text-xs px-2 py-1 rounded border border-blue-500/20 uppercase tracking-widest font-bold">
-                                    SaaS Active
-                                </span>
+                                <span className="bg-blue-500/10 text-blue-400 text-xs px-2 py-1 rounded border border-blue-500/20 uppercase tracking-widest font-bold">SaaS Active</span>
                             </div>
-                            <button
-                                onClick={handleSave}
-                                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20"
-                            >
-                                <Save size={18} />
-                                Guardar Cambios
+                            <button onClick={handleSave} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20">
+                                <Save size={18} /> Guardar Cambios
                             </button>
                         </header>
-
-                        {/* Editor Grid */}
                         <main className="flex-1 overflow-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="space-y-6">
                                 <section className="bg-slate-800/40 border border-slate-700 rounded-xl p-5">
@@ -155,29 +137,16 @@ const AdminDashboard = () => {
                                         <Shield size={18} />
                                         <h3 className="font-bold uppercase text-xs tracking-widest">Constitución del Bot</h3>
                                     </div>
-                                    <textarea
-                                        className="w-full h-64 bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                        placeholder="Define las leyes fundamentales aquí..."
-                                        value={selectedConfig.constitution || ''}
-                                        onChange={(e) => setSelectedConfig({ ...selectedConfig, constitution: e.target.value })}
-                                    />
+                                    <textarea className="w-full h-64 bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={selectedConfig.constitution || ''} onChange={(e) => setSelectedConfig({ ...selectedConfig, constitution: e.target.value })} />
                                 </section>
-
                                 <section className="bg-slate-800/40 border border-slate-700 rounded-xl p-5">
                                     <div className="flex items-center gap-2 mb-4 text-purple-400">
                                         <Layout size={18} />
                                         <h3 className="font-bold uppercase text-xs tracking-widest">Estructura de Conversación</h3>
                                     </div>
-                                    <textarea
-                                        className="w-full h-64 bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all"
-                                        placeholder="Define el flujo de la conversación..."
-                                        value={selectedConfig.conversation_structure || ''}
-                                        onChange={(e) => setSelectedConfig({ ...selectedConfig, conversation_structure: e.target.value })}
-                                    />
+                                    <textarea className="w-full h-64 bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all" value={selectedConfig.conversation_structure || ''} onChange={(e) => setSelectedConfig({ ...selectedConfig, conversation_structure: e.target.value })} />
                                 </section>
                             </div>
-
-                            {/* Logs / Cognitive Trace */}
                             <div className="space-y-6">
                                 <section className="bg-slate-800/40 border border-slate-700 rounded-xl p-5 h-full flex flex-col">
                                     <div className="flex items-center justify-between mb-4">
@@ -190,9 +159,7 @@ const AdminDashboard = () => {
                                         {logs.map(log => (
                                             <div key={log.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs">
                                                 <div className="flex justify-between mb-2">
-                                                    <span className={`font-bold ${log.direction === 'inbound' ? 'text-slate-400' : 'text-blue-400'}`}>
-                                                        {log.direction.toUpperCase()}
-                                                    </span>
+                                                    <span className={`font-bold ${log.direction === 'inbound' ? 'text-slate-400' : 'text-blue-400'}`}>{log.direction.toUpperCase()}</span>
                                                     <span className="opacity-40">{new Date(log.created_at).toLocaleTimeString()}</span>
                                                 </div>
                                                 <p className="mb-2 italic opacity-80">"{log.content?.substring(0, 300)}..."</p>

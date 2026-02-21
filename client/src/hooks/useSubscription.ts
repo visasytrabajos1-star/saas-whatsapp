@@ -1,11 +1,6 @@
 import { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { useAuth } from '../auth/AuthContext';
-
-const supabase = createClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+import { supabase } from '../supabaseClient';
 
 interface Plan {
     name: string;
@@ -25,11 +20,13 @@ export const useSubscription = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (!user) return;
+        if (!user || !supabase) {
+            setLoading(false);
+            return;
+        }
 
         const fetchData = async () => {
             try {
-                // 1. Get Profile and Plan Info
                 const { data: profile } = await supabase
                     .from('profiles')
                     .select('*, plans(*)')
@@ -40,7 +37,6 @@ export const useSubscription = () => {
                     setPlan(profile.plans);
                 }
 
-                // 2. Get Current Usage (Messages this month)
                 const currentMonth = new Date().toISOString().substring(0, 7);
                 const { data: usageData } = await supabase
                     .from('usage_metrics')
@@ -49,7 +45,6 @@ export const useSubscription = () => {
                     .eq('month_year', currentMonth)
                     .single();
 
-                // 3. Get Bot Count
                 const { count: botCount } = await supabase
                     .from('bot_configs')
                     .select('*', { count: 'exact', head: true })
@@ -71,7 +66,7 @@ export const useSubscription = () => {
     }, [user]);
 
     const checkLimit = (type: 'bots' | 'messages') => {
-        if (!plan) return false;
+        if (!plan) return true; // Fail safe
 
         if (type === 'bots') {
             return usage.bot_count < plan.max_bots;
