@@ -1,6 +1,7 @@
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
+import { AuthProvider } from './auth/AuthContext';
 import Login from './components/Login';
 
 import LandingPage from './components/LandingPage';
@@ -46,7 +47,12 @@ function App() {
   }, []);
 
   if (loading) {
-    return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">Cargando...</div>;
+    return (
+      <div className="min-h-screen bg-[#0f172a] flex flex-col items-center justify-center text-white p-6 font-sans">
+        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-slate-400 animate-pulse font-bold tracking-widest uppercase text-xs">Iniciando ALEX IO...</p>
+      </div>
+    );
   }
 
   const ProtectedRoute = ({ children }) => {
@@ -55,42 +61,44 @@ function App() {
   };
 
   return (
-    <Router>
-      <div className="min-h-screen bg-black">
-        <Routes>
-          <Route path="/login" element={!session ? <Login /> : <Navigate to="/dashboard" />} />
+    <AuthProvider>
+      <Router>
+        <div className="min-h-screen bg-black selection:bg-blue-500/30">
+          <Routes>
+            <Route path="/login" element={!session ? <Login /> : <Navigate to="/dashboard" />} />
 
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <WhatsAppConnect />
-            </ProtectedRoute>
-          } />
+            <Route path="/dashboard" element={
+              <ProtectedRoute>
+                <WhatsAppConnect />
+              </ProtectedRoute>
+            } />
 
-          <Route path="/admin" element={
-            <ProtectedRoute>
-              <AdminDashboard />
-            </ProtectedRoute>
-          } />
+            <Route path="/admin" element={
+              <ProtectedRoute>
+                <AdminDashboard />
+              </ProtectedRoute>
+            } />
 
-          <Route path="/superadmin" element={
-            <ProtectedRoute>
-              <SuperAdminDashboard />
-            </ProtectedRoute>
-          } />
+            <Route path="/superadmin" element={
+              <ProtectedRoute>
+                <SuperAdminDashboard />
+              </ProtectedRoute>
+            } />
 
-          <Route path="/saas" element={<SaasDashboard />} />
-          <Route path="/payment-setup" element={<ProtectedRoute><PaymentSetup /></ProtectedRoute>} />
-          <Route path="/onboarding" element={
-            <ProtectedRoute>
-              <OnboardingWizard session={session} onComplete={() => { }} />
-            </ProtectedRoute>
-          } />
+            <Route path="/saas" element={<SaasDashboard />} />
+            <Route path="/payment-setup" element={<ProtectedRoute><PaymentSetup /></ProtectedRoute>} />
+            <Route path="/onboarding" element={
+              <ProtectedRoute>
+                <OnboardingWizard session={session} onComplete={() => { }} />
+              </ProtectedRoute>
+            } />
 
-          <Route path="/" element={<LandingPage />} />
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
-      </div>
-    </Router>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="*" element={<Navigate to="/" />} />
+          </Routes>
+        </div>
+      </Router>
+    </AuthProvider>
   );
 }
 
