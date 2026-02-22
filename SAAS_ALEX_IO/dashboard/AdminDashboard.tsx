@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Save, Shield, Layout, MessageSquare, Activity } from 'lucide-react';
-import { useAuth } from '../auth/AuthContext';
+import { useAuth } from '../src/auth/AuthContext';
 
 const supabase = createClient(
     import.meta.env.VITE_SUPABASE_URL,

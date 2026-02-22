@@ -1,4 +1,4 @@
-// Deploy Trigger: 2026-02-16 13:45 (Force Render Sync - Alex IO v5.1)
+// Deploy Trigger: 2026-02-22 08:00 (Stability Patch - Alex IO v7.2)
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -567,6 +567,11 @@ async function connectToWhatsApp() {
                     try {
                         const result = await processMessageAleX(id, text, audioBuffer);
 
+                        if (!result || !result.response) {
+                            console.warn(`⚠️ Brain returned empty response for ${id}`);
+                            return;
+                        }
+
                         // SI EL USUARIO MANDÓ AUDIO -> RESPONDE CON AUDIO
                         if (audioMsg) {
                             console.log(`🎤 Entrada de audio detectada para ${id}. Respondiendo ÚNICAMENTE con voz.`);
@@ -782,4 +787,3 @@ setInterval(() => {
         connectingSince = null;
     }
 }, 10000);
-
