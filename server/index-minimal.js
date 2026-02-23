@@ -49,6 +49,15 @@ app.use(express.json());
 
 // --- HEALTH CHECK (CRITICAL FOR RENDER) ---
 app.get('/health', (req, res) => res.status(200).send('OK'));
+app.get('/', (req, res) => {
+    res.json({
+        status: 'online',
+        version: '2.0.4',
+        platform: 'ALEX IO SAAS (Minimal)',
+        features: ['V6 Protocol Hardening', 'V8 Multi-Tenancy'],
+        users: 'Optimized for scale'
+    });
+});
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 app.get('/api/diagnostics', async (req, res) => {
     const diag = {
