@@ -2,12 +2,16 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import Pricing from './Pricing';
+import Login from './Login';
 
 function App() {
+  const token = localStorage.getItem('alex_io_token');
+
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/" element={token ? <Dashboard /> : <Login />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/success" element={<Success />} />
       </Routes>

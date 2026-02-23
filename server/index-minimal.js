@@ -490,7 +490,7 @@ async function connectToWhatsApp() {
         auth: state,
         printQRInTerminal: true,
         logger: pino({ level: 'silent' }),
-        browser: ['Alex Bot', 'Chrome', '121.0.0.0'],
+        browser: ['Ubuntu', 'Chrome', '120.0.0'],
         syncFullHistory: false,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,

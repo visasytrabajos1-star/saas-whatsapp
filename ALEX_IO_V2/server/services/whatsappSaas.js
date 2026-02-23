@@ -1,4 +1,4 @@
-const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const QRCode = require('qrcode');
 const fs = require('fs');
 const pino = require('pino');
@@ -12,9 +12,10 @@ const activeSessions = new Map();
 const clientConfigs = new Map();
 const sessionStatus = new Map();
 const reconnectAttempts = new Map();
+const lastMessagePerJid = new Map(); // Simple loop prevention cache
 const sessionsDir = './sessions';
 const sessionsTable = process.env.WHATSAPP_SESSIONS_TABLE || 'whatsapp_sessions';
-const maxReconnectAttempts = Number(process.env.WHATSAPP_MAX_RECONNECT_ATTEMPTS || 8);
+const maxReconnectAttempts = Number(process.env.WHATSAPP_MAX_RECONNECT_ATTEMPTS || 100);
 
 if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -24,6 +25,8 @@ const updateSessionStatus = async (instanceId, status, extra = {}) => {
         status,
         qr_code: extra.qr_code ?? null,
         company_name: extra.companyName ?? null,
+        provider: extra.provider ?? null,
+        tenant_id: extra.tenantId ?? null,
         updated_at: new Date().toISOString()
     };
 
@@ -31,7 +34,9 @@ const updateSessionStatus = async (instanceId, status, extra = {}) => {
         status,
         qr_code: payload.qr_code,
         updatedAt: payload.updated_at,
-        companyName: payload.company_name
+        companyName: payload.company_name,
+        provider: payload.provider,
+        tenantId: payload.tenant_id
     });
 
     if (!isSupabaseEnabled) return;
@@ -41,24 +46,19 @@ const updateSessionStatus = async (instanceId, status, extra = {}) => {
         .upsert(payload, { onConflict: 'instance_id' });
 
     if (error) {
-        console.warn(`⚠️ Supabase session sync failed for ${instanceId}:`, error.message);
+        console.warn(`⚠️ [${instanceId}] Supabase sync failed:`, error.message);
     }
 };
 
 const hydrateSessionStatus = async () => {
-    if (!isSupabaseEnabled) {
-        console.log('ℹ️ Supabase session persistence disabled (missing credentials).');
-        return;
-    }
+    if (!isSupabaseEnabled) return;
 
     const { data, error } = await supabase
         .from(sessionsTable)
-        .select('instance_id,status,qr_code,updated_at,company_name')
-        .order('updated_at', { ascending: false })
-        .limit(200);
+        .select('instance_id,status,qr_code,updated_at,company_name,provider,tenant_id');
 
     if (error) {
-        console.warn('⚠️ Could not hydrate session status from Supabase:', error.message);
+        console.warn('⚠️ Could not hydrate session status:', error.message);
         return;
     }
 
@@ -67,11 +67,13 @@ const hydrateSessionStatus = async () => {
             status: row.status,
             qr_code: row.qr_code,
             updatedAt: row.updated_at,
-            companyName: row.company_name
+            companyName: row.company_name,
+            provider: row.provider,
+            tenantId: row.tenant_id
         });
     }
 
-    console.log(`✅ Session status hydrated from Supabase (${(data || []).length} records).`);
+    console.log(`✅ Session status hydrated (${(data || []).length} records).`);
 };
 
 const clearSessionRuntime = (instanceId) => {
@@ -81,32 +83,33 @@ const clearSessionRuntime = (instanceId) => {
 
 const safeDeletePersistentSession = async (instanceId) => {
     if (!isSupabaseEnabled) return;
-
-    const { error } = await supabase.from(sessionsTable).delete().eq('instance_id', instanceId);
-    if (error) console.warn(`⚠️ Failed deleting ${instanceId} from Supabase:`, error.message);
+    await supabase.from(sessionsTable).delete().eq('instance_id', instanceId);
 };
 
-hydrateSessionStatus().catch((error) => {
-    console.warn('⚠️ Session hydration bootstrap error:', error.message);
-});
+hydrateSessionStatus().catch(console.error);
 
 // --- HANDLER: QR MODE (Baileys) ---
 async function handleQRMessage(sock, msg, instanceId) {
     if (!msg.message || msg.key.remoteJid === 'status@broadcast' || msg.key.fromMe) return;
 
+    const remoteJid = msg.key.remoteJid;
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption;
     const hasImage = !!(msg.message.imageMessage || msg.message.image);
 
+    // Loop Prevention: Prevent processing the same message twice or too fast
+    const lastMsg = lastMessagePerJid.get(remoteJid);
+    const now = Date.now();
+    if (lastMsg && lastMsg.text === text && (now - lastMsg.time < 3000)) return;
+    lastMessagePerJid.set(remoteJid, { text, time: now });
+
     if (hasImage && !text) {
-        const remoteJid = msg.key.remoteJid;
-        await sock.sendMessage(remoteJid, { text: '¡Hola! Soy Alex. Lamentablemente, en este momento no puedo ver imágenes. ¿Podrías describirme con palabras lo que necesitas? Así podré ayudarte mejor 😊' });
+        await sock.sendMessage(remoteJid, { text: '¡Hola! Soy Alex. Por ahora no puedo ver imágenes, pero si me explicas qué necesitas, ¡te ayudo de inmediato! 😊' });
         return;
     }
 
     if (!text) return;
 
     const config = clientConfigs.get(instanceId) || { companyName: 'ALEX IO' };
-    const remoteJid = msg.key.remoteJid;
 
     try {
         await sock.readMessages([msg.key]);
@@ -114,7 +117,6 @@ async function handleQRMessage(sock, msg, instanceId) {
 
         const result = await alexBrain.generateResponse({
             message: text,
-            history: [],
             botConfig: {
                 bot_name: config.companyName,
                 system_prompt: config.customPrompt || 'Eres ALEX IO, asistente virtual inteligente.'
@@ -122,7 +124,12 @@ async function handleQRMessage(sock, msg, instanceId) {
         });
 
         if (result.text) {
-            await sock.sendMessage(remoteJid, { text: result.text });
+            // Support for audio responses if implemented in result
+            if (result.audioBuffer) {
+                await sock.sendMessage(remoteJid, { audio: result.audioBuffer, mimetype: 'audio/mp4', ptt: true });
+            } else {
+                await sock.sendMessage(remoteJid, { text: result.text });
+            }
             console.log(`📤 [${config.companyName}] Respondido con ${result.trace.model}`);
         }
     } catch (err) {
@@ -131,81 +138,96 @@ async function handleQRMessage(sock, msg, instanceId) {
 }
 
 // --- CONNECT FUNCTION ---
+let cachedVersion = null;
 async function connectToWhatsApp(instanceId, config, res = null) {
     const sessionPath = `${sessionsDir}/${instanceId}`;
     clientConfigs.set(instanceId, config);
 
-    const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+    // If Cloud Provider, just update status and finish
+    if (config.provider && config.provider !== 'baileys') {
+        await updateSessionStatus(instanceId, 'online', {
+            companyName: config.companyName,
+            provider: config.provider,
+            tenantId: config.tenantId
+        });
+        if (res && !res.headersSent) {
+            res.json({ success: true, message: 'Cloud Instance Configured', instance_id: instanceId, status: 'online' });
+        }
+        return;
+    }
 
+    // Baileys Connection Logic (Preserved V6 Hardening)
+    if (!fs.existsSync(`${sessionPath}/creds.json`)) {
+        try { fs.rmSync(sessionPath, { recursive: true, force: true }); } catch (_) { }
+    }
+    if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath, { recursive: true });
+
+    if (!cachedVersion) {
+        try {
+            const { version, isLatest } = await fetchLatestBaileysVersion();
+            cachedVersion = version;
+            console.log(`🌐 [V6 Protocol] WA Version fetched: ${version.join('.')} (isLatest: ${isLatest})`);
+        } catch (err) {
+            console.warn('⚠️ [V6 Protocol] Failed to fetch dynamic version, applying Hardened Fallback [2, 3000, 1015901307]');
+            cachedVersion = [2, 3000, 1015901307];
+        }
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
     const sock = makeWASocket({
         auth: state,
+        version: cachedVersion,
         printQRInTerminal: false,
-        logger: pino({ level: 'fatal' }),
-        browser: ['ALEX IO', 'Chrome', '120.0.04'],
-        connectTimeoutMs: 60000,
-        keepAliveIntervalMs: 10000
+        logger: pino({ level: 'silent' }),
+        browser: ['Windows', 'Chrome', '20.0.04']
     });
 
     const previous = activeSessions.get(instanceId);
-    if (previous && previous !== sock) {
-        try { previous.end?.(); } catch (_) { }
-    }
+    if (previous && previous !== sock) { try { previous.end(); } catch (_) { } }
 
     activeSessions.set(instanceId, sock);
-    await updateSessionStatus(instanceId, 'connecting', { companyName: config.companyName });
-    console.log(`🔄 [${instanceId}] Connecting for ${config.companyName || 'ALEX IO'}...`);
+    await updateSessionStatus(instanceId, 'connecting', {
+        companyName: config.companyName,
+        provider: 'baileys',
+        tenantId: config.tenantId
+    });
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
+        const closeCode = lastDisconnect?.error?.output?.statusCode || lastDisconnect?.error?.statusCode || null;
 
         if (qr) {
-            QRCode.toDataURL(qr)
-                .then(async (url) => {
-                    await updateSessionStatus(instanceId, 'qr_ready', {
-                        companyName: config.companyName,
-                        qr_code: url
-                    });
-
-                    console.log(`📲 [${instanceId}] QR generated.`);
-
-                    if (res && !res.headersSent) {
-                        res.json({ success: true, qr_code: url, instance_id: instanceId });
-                    }
-                })
-                .catch((error) => {
-                    console.error(`❌ [${instanceId}] QR conversion failed:`, error.message);
+            QRCode.toDataURL(qr).then(async (url) => {
+                await updateSessionStatus(instanceId, 'qr_ready', {
+                    companyName: config.companyName,
+                    qr_code: url,
+                    provider: 'baileys',
+                    tenantId: config.tenantId
                 });
+                if (res && !res.headersSent) res.json({ success: true, qr_code: url, instance_id: instanceId });
+            }).catch(console.error);
         }
 
         if (connection === 'close') {
-            updateSessionStatus(instanceId, 'disconnected', {
-                companyName: config.companyName,
-                qr_code: null
-            }).catch(() => null);
+            const isLogout = closeCode === DisconnectReason.loggedOut;
+            const isBadSession = closeCode === 405;
+            updateSessionStatus(instanceId, 'disconnected', { companyName: config.companyName, provider: 'baileys', tenantId: config.tenantId }).catch(() => null);
 
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             const attempts = (reconnectAttempts.get(instanceId) || 0) + 1;
-            reconnectAttempts.set(instanceId, attempts);
-
-            console.log(`⚠️ [${instanceId}] Connection closed. Reconnect: ${shouldReconnect ? 'yes' : 'no'} (attempt ${attempts}/${maxReconnectAttempts})`);
-
-            if (shouldReconnect && attempts <= maxReconnectAttempts) {
-                setTimeout(() => connectToWhatsApp(instanceId, config, null), 5000);
+            if (!isLogout && !isBadSession && attempts <= maxReconnectAttempts) {
+                reconnectAttempts.set(instanceId, attempts);
+                setTimeout(() => connectToWhatsApp(instanceId, config, res), 5000);
             } else {
+                if (isBadSession) try { fs.rmSync(sessionPath, { recursive: true, force: true }); } catch (_) { }
                 clearSessionRuntime(instanceId);
             }
         } else if (connection === 'open') {
             reconnectAttempts.set(instanceId, 0);
-            updateSessionStatus(instanceId, 'online', {
-                companyName: config.companyName,
-                qr_code: null
-            }).catch(() => null);
-            console.log(`✅ [${instanceId}] ${config.companyName} ONLINE!`);
+            updateSessionStatus(instanceId, 'online', { companyName: config.companyName, provider: 'baileys', tenantId: config.tenantId }).catch(() => null);
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
-
     sock.ev.on('messages.upsert', async ({ messages }) => {
         for (const msg of messages) await handleQRMessage(sock, msg, instanceId);
     });
@@ -215,122 +237,65 @@ async function connectToWhatsApp(instanceId, config, res = null) {
 
 // --- ENDPOINTS ---
 router.post('/connect', async (req, res) => {
-    const { companyName, customPrompt } = req.body || {};
+    const { companyName, customPrompt, provider, tenantId } = req.body || {};
     const cleanName = String(companyName || '').trim();
-
-    if (!cleanName) {
-        return res.status(400).json({ error: 'companyName es requerido.' });
-    }
+    if (!cleanName) return res.status(400).json({ error: 'companyName is required' });
 
     const instanceId = `alex_${Date.now()}`;
+    // Prioritize authenticated tenant ID
+    const effectiveTenantId = req.tenant?.id || tenantId || req.headers['x-tenant-id'];
+    const config = { companyName: cleanName, customPrompt, provider: provider || 'baileys', tenantId: effectiveTenantId };
 
     try {
-        await connectToWhatsApp(instanceId, { companyName: cleanName, customPrompt }, res);
-
-        const timeoutHandle = setTimeout(async () => {
-            if (!res.headersSent) {
-                await updateSessionStatus(instanceId, 'timeout_waiting_qr', {
-                    companyName: cleanName,
-                    qr_code: null
-                });
-
-                res.status(408).json({
-                    error: 'Timeout waiting for QR. Aún estamos conectando con WhatsApp, intenta nuevamente en unos segundos.',
-                    instance_id: instanceId
-                });
-            }
-        }, 90000);
-
-        res.on('close', () => clearTimeout(timeoutHandle));
-        res.on('finish', () => clearTimeout(timeoutHandle));
+        await connectToWhatsApp(instanceId, config, res);
     } catch (err) {
-        console.error(`❌ [${instanceId}] Connect failed:`, err.message);
-        await updateSessionStatus(instanceId, 'error_connecting', {
-            companyName: cleanName,
-            qr_code: null
-        });
         res.status(500).json({ error: err.message });
     }
 });
 
+router.post('/config/:instanceId', async (req, res) => {
+    const { instanceId } = req.params;
+    const config = req.body;
+    if (!config) return res.status(400).json({ error: 'Config is required' });
+
+    clientConfigs.set(instanceId, { ...clientConfigs.get(instanceId), ...config });
+    await updateSessionStatus(instanceId, 'online', config); // Keep online if updated
+    res.json({ success: true });
+});
+
 router.post('/disconnect', async (req, res) => {
     const { instanceId } = req.body || {};
-    if (!instanceId || !activeSessions.has(instanceId)) {
-        return res.status(404).json({ error: 'Instance not found' });
+    const session = activeSessions.get(instanceId);
+    if (session) {
+        try { session.logout(); } catch (_) { }
+        clearSessionRuntime(instanceId);
     }
-
-    try {
-        activeSessions.get(instanceId).logout();
-    } catch (_) { }
-
-    clearSessionRuntime(instanceId);
-    clientConfigs.delete(instanceId);
-    sessionStatus.delete(instanceId);
     await safeDeletePersistentSession(instanceId);
-
-    try { fs.rmSync(`./sessions/${instanceId}`, { recursive: true, force: true }); } catch (_) { }
-
-    return res.json({ success: true });
-});
-
-router.get('/webhook', (req, res) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
-
-    if (mode === 'subscribe' && token === process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN) {
-        res.status(200).send(challenge);
-    } else {
-        res.sendStatus(403);
-    }
-});
-
-router.post('/webhook', async (req, res) => {
-    const body = req.body;
-    if (body.object) {
-        const entry = body.entry?.[0];
-        const changes = entry?.changes?.[0];
-        const messages = changes?.value?.messages;
-
-        if (messages && messages[0]) {
-            const msg = messages[0];
-            const from = msg.from;
-            const text = msg.text?.body;
-
-            if (text) {
-                const result = await alexBrain.generateResponse({
-                    message: text,
-                    botConfig: { bot_name: 'ALEX IO SaaS', system_prompt: 'Eres ALEX IO.' }
-                });
-
-                console.log(`📩 [Cloud] ${from}: ${text} -> ${result.text.substring(0, 30)}...`);
-            }
-        }
-        res.sendStatus(200);
-    } else {
-        res.sendStatus(404);
-    }
+    sessionStatus.delete(instanceId);
+    try { fs.rmSync(`${sessionsDir}/${instanceId}`, { recursive: true, force: true }); } catch (_) { }
+    res.json({ success: true });
 });
 
 router.get('/status', (req, res) => {
-    const sessions = Array.from(sessionStatus.entries()).map(([instanceId, info]) => ({ instanceId, ...info }));
+    const tenantId = req.tenant?.id || req.query.tenantId || req.headers['x-tenant-id'];
+    let sessions = Array.from(sessionStatus.entries()).map(([id, info]) => ({ instanceId: id, ...info }));
+
+    // Filter by tenant if provided (Multi-tenancy real)
+    if (tenantId) {
+        sessions = sessions.filter(s => s.tenantId === tenantId);
+    }
 
     res.json({
-        active_sessions: activeSessions.size,
-        reconnecting_sessions: Array.from(reconnectAttempts.entries()).filter(([, attempts]) => attempts > 0).length,
+        active_sessions: sessions.length,
         sessions,
-        uptime: process.uptime(),
-        cache_stats: global.responseCache?.getStats()
+        uptime: process.uptime()
     });
 });
 
 router.get('/status/:instanceId', (req, res) => {
-    const { instanceId } = req.params;
-    const info = sessionStatus.get(instanceId);
-
-    if (!info) return res.status(404).json({ error: 'Instance not found' });
-
-    res.json({ instance_id: instanceId, reconnect_attempts: reconnectAttempts.get(instanceId) || 0, ...info });
+    const info = sessionStatus.get(req.params.instanceId);
+    if (!info) return res.status(404).json({ error: 'Not found' });
+    res.json({ instance_id: req.params.instanceId, ...info });
 });
 
 module.exports = router;

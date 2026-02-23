@@ -1,199 +1,301 @@
-const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const QRCode = require('qrcode');
 const fs = require('fs');
 const pino = require('pino');
 const express = require('express');
 const router = express.Router();
 const alexBrain = require('./alexBrain');
+const { supabase, isSupabaseEnabled } = require('./supabaseClient');
 
-// Session Storage
+// Session Management
 const activeSessions = new Map();
-const clientConfigs = new Map(); // Cache for runtime configs
-const sessionsDir = './sessions';
-
-if (!fs.existsSync(sessionsDir)) {
-    fs.mkdirSync(sessionsDir, { recursive: true });
-}
-
-// Session Tracking for polling (v5.2)
+const clientConfigs = new Map();
 const sessionStatus = new Map();
-const sessionQRs = new Map();
+const reconnectAttempts = new Map();
+const lastMessagePerJid = new Map(); // Simple loop prevention cache
+const sessionsDir = './sessions';
+const sessionsTable = process.env.WHATSAPP_SESSIONS_TABLE || 'whatsapp_sessions';
+const maxReconnectAttempts = Number(process.env.WHATSAPP_MAX_RECONNECT_ATTEMPTS || 100);
 
-// --- 📲 QR HANDLER (MULTI-TENANT) ---
+if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
+
+const updateSessionStatus = async (instanceId, status, extra = {}) => {
+    const payload = {
+        instance_id: instanceId,
+        status,
+        qr_code: extra.qr_code ?? null,
+        company_name: extra.companyName ?? null,
+        provider: extra.provider ?? null,
+        tenant_id: extra.tenantId ?? null,
+        updated_at: new Date().toISOString()
+    };
+
+    sessionStatus.set(instanceId, {
+        status,
+        qr_code: payload.qr_code,
+        updatedAt: payload.updated_at,
+        companyName: payload.company_name,
+        provider: payload.provider,
+        tenantId: payload.tenant_id
+    });
+
+    if (!isSupabaseEnabled) return;
+
+    const { error } = await supabase
+        .from(sessionsTable)
+        .upsert(payload, { onConflict: 'instance_id' });
+
+    if (error) {
+        console.warn(`⚠️ [${instanceId}] Supabase sync failed:`, error.message);
+    }
+};
+
+const hydrateSessionStatus = async () => {
+    if (!isSupabaseEnabled) return;
+
+    const { data, error } = await supabase
+        .from(sessionsTable)
+        .select('instance_id,status,qr_code,updated_at,company_name,provider,tenant_id');
+
+    if (error) {
+        console.warn('⚠️ Could not hydrate session status:', error.message);
+        return;
+    }
+
+    for (const row of data || []) {
+        sessionStatus.set(row.instance_id, {
+            status: row.status,
+            qr_code: row.qr_code,
+            updatedAt: row.updated_at,
+            companyName: row.company_name,
+            provider: row.provider,
+            tenantId: row.tenant_id
+        });
+    }
+
+    console.log(`✅ Session status hydrated (${(data || []).length} records).`);
+};
+
+const clearSessionRuntime = (instanceId) => {
+    activeSessions.delete(instanceId);
+    reconnectAttempts.delete(instanceId);
+};
+
+const safeDeletePersistentSession = async (instanceId) => {
+    if (!isSupabaseEnabled) return;
+    await supabase.from(sessionsTable).delete().eq('instance_id', instanceId);
+};
+
+hydrateSessionStatus().catch(console.error);
+
+// --- HANDLER: QR MODE (Baileys) ---
 async function handleQRMessage(sock, msg, instanceId) {
     if (!msg.message || msg.key.remoteJid === 'status@broadcast' || msg.key.fromMe) return;
 
-    const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+    const remoteJid = msg.key.remoteJid;
+    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption;
+    const hasImage = !!(msg.message.imageMessage || msg.message.image);
+
+    // Loop Prevention: Prevent processing the same message twice or too fast
+    const lastMsg = lastMessagePerJid.get(remoteJid);
+    const now = Date.now();
+    if (lastMsg && lastMsg.text === text && (now - lastMsg.time < 3000)) return;
+    lastMessagePerJid.set(remoteJid, { text, time: now });
+
+    if (hasImage && !text) {
+        await sock.sendMessage(remoteJid, { text: '¡Hola! Soy Alex. Por ahora no puedo ver imágenes, pero si me explicas qué necesitas, ¡te ayudo de inmediato! 😊' });
+        return;
+    }
+
     if (!text) return;
 
-    // Get Config from internal cache or fallback
-    const config = clientConfigs.get(instanceId) || { companyName: 'ALEX IO Business' };
-    const remoteJid = msg.key.remoteJid;
+    const config = clientConfigs.get(instanceId) || { companyName: 'ALEX IO' };
 
     try {
-        await new Promise(r => setTimeout(r, 1000));
         await sock.readMessages([msg.key]);
         await sock.sendPresenceUpdate('composing', remoteJid);
 
-        const brainParams = {
+        const result = await alexBrain.generateResponse({
             message: text,
-            history: [],
-            botConfig: config.botConfig || {
-                bot_name: 'ALEX IO',
-                system_prompt: config.customPrompt || 'Eres un asistente virtual de ALEX IO.'
-            },
-            messageType: msg.message.audioMessage ? 'audio' : 'text'
-        };
+            botConfig: {
+                bot_name: config.companyName,
+                system_prompt: config.customPrompt || 'Eres ALEX IO, asistente virtual inteligente.'
+            }
+        });
 
-        const result = await alexBrain.generateResponse(brainParams);
-
-        if (result.audio) {
-            await sock.sendMessage(remoteJid, { audio: Buffer.from(result.audio, 'base64'), mimetype: 'audio/mp4', ptt: true });
-        } else {
-            await sock.sendMessage(remoteJid, { text: result.text });
+        if (result.text) {
+            // Support for audio responses if implemented in result
+            if (result.audioBuffer) {
+                await sock.sendMessage(remoteJid, { audio: result.audioBuffer, mimetype: 'audio/mp4', ptt: true });
+            } else {
+                await sock.sendMessage(remoteJid, { text: result.text });
+            }
+            console.log(`📤 [${config.companyName}] Respondido con ${result.trace.model}`);
         }
-
-        console.log(`📤 [QR] Replied via ${result.trace.model}`);
-
     } catch (err) {
-        console.error('❌ QR Handler Error:', err.message);
+        console.error('❌ Error handling message:', err.message);
     }
 }
 
-// --- ☁️ CLOUD API HANDLER ---
-async function handleCloudMessage(message) {
-    const from = message.from;
-    const text = message.text?.body;
-
-    // In production, config should be fetched from DB using the recipients phone number or an ID
-    const config = {
-        botConfig: {
-            bot_name: 'ALEX IO API',
-            system_prompt: 'Eres el cerebro cognitivo ALEX IO conectado vía API Cloud.'
-        }
-    };
-
-    console.log(`📩 [API: ${from}] Msg: ${text}`);
-
-    const brainParams = {
-        message: text,
-        history: [],
-        botConfig: config.botConfig,
-        messageType: message.type || 'text'
-    };
-
-    const result = await alexBrain.generateResponse(brainParams);
-
-    // --- SAFETY CHECK ---
-    if (!result || !result.text || result.text.trim() === "") {
-        console.error("❌ AI Brain returned empty response.");
-        return; // Don't send empty message to avoid Baileys crash
-    }
-
-    try {
-        const axios = require('axios');
-        const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-        const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
-
-        await axios.post(
-            `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
-            {
-                messaging_product: 'whatsapp',
-                to: from,
-                type: 'text',
-                text: { body: result.text }
-            },
-            { headers: { 'Authorization': `Bearer ${accessToken}` } }
-        );
-        console.log(`📤 [API] Replied via ${result.trace.model}`);
-    } catch (error) {
-        console.error('❌ Cloud API Error:', error.message);
-    }
-}
-
-// --- 🔗 QR CONNECTION ---
-async function connectToWhatsApp(instanceId, config) {
+// --- CONNECT FUNCTION ---
+let cachedVersion = null;
+async function connectToWhatsApp(instanceId, config, res = null) {
     const sessionPath = `${sessionsDir}/${instanceId}`;
     clientConfigs.set(instanceId, config);
+
+    // If Cloud Provider, just update status and finish
+    if (config.provider && config.provider !== 'baileys') {
+        await updateSessionStatus(instanceId, 'online', {
+            companyName: config.companyName,
+            provider: config.provider,
+            tenantId: config.tenantId
+        });
+        if (res && !res.headersSent) {
+            res.json({ success: true, message: 'Cloud Instance Configured', instance_id: instanceId, status: 'online' });
+        }
+        return;
+    }
+
+    // Baileys Connection Logic (Preserved V6 Hardening)
+    if (!fs.existsSync(`${sessionPath}/creds.json`)) {
+        try { fs.rmSync(sessionPath, { recursive: true, force: true }); } catch (_) { }
+    }
+    if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath, { recursive: true });
+
+    if (!cachedVersion) {
+        try {
+            const { version, isLatest } = await fetchLatestBaileysVersion();
+            cachedVersion = version;
+            console.log(`🌐 [V6 Protocol] WA Version fetched: ${version.join('.')} (isLatest: ${isLatest})`);
+        } catch (err) {
+            console.warn('⚠️ [V6 Protocol] Failed to fetch dynamic version, applying Hardened Fallback [2, 3000, 1015901307]');
+            cachedVersion = [2, 3000, 1015901307];
+        }
+    }
 
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
     const sock = makeWASocket({
         auth: state,
+        version: cachedVersion,
         printQRInTerminal: false,
-        logger: pino({ level: 'fatal' }),
-        browser: ['ALEX IO', 'SaaS', '1.0']
+        logger: pino({ level: 'silent' }),
+        browser: ['Windows', 'Chrome', '20.0.04']
     });
 
+    const previous = activeSessions.get(instanceId);
+    if (previous && previous !== sock) { try { previous.end(); } catch (_) { } }
+
     activeSessions.set(instanceId, sock);
+    await updateSessionStatus(instanceId, 'connecting', {
+        companyName: config.companyName,
+        provider: 'baileys',
+        tenantId: config.tenantId
+    });
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
+        const closeCode = lastDisconnect?.error?.output?.statusCode || lastDisconnect?.error?.statusCode || null;
 
         if (qr) {
-            sessionStatus.set(instanceId, 'qr_ready');
-            QRCode.toDataURL(qr, (err, url) => {
-                if (!err) sessionQRs.set(instanceId, url);
-            });
-        }
-
-        if (connection === 'open') {
-            console.log(`✅ Instance ${instanceId} ONLINE`);
-            sessionStatus.set(instanceId, 'online');
-            sessionQRs.delete(instanceId); // Clean up QR on success
+            QRCode.toDataURL(qr).then(async (url) => {
+                await updateSessionStatus(instanceId, 'qr_ready', {
+                    companyName: config.companyName,
+                    qr_code: url,
+                    provider: 'baileys',
+                    tenantId: config.tenantId
+                });
+                if (res && !res.headersSent) res.json({ success: true, qr_code: url, instance_id: instanceId });
+            }).catch(console.error);
         }
 
         if (connection === 'close') {
-            sessionStatus.set(instanceId, 'disconnected');
+            const isLogout = closeCode === DisconnectReason.loggedOut;
+            const isBadSession = closeCode === 405;
+            updateSessionStatus(instanceId, 'disconnected', { companyName: config.companyName, provider: 'baileys', tenantId: config.tenantId }).catch(() => null);
+
+            const attempts = (reconnectAttempts.get(instanceId) || 0) + 1;
+            if (!isLogout && !isBadSession && attempts <= maxReconnectAttempts) {
+                reconnectAttempts.set(instanceId, attempts);
+                setTimeout(() => connectToWhatsApp(instanceId, config, res), 5000);
+            } else {
+                if (isBadSession) try { fs.rmSync(sessionPath, { recursive: true, force: true }); } catch (_) { }
+                clearSessionRuntime(instanceId);
+            }
+        } else if (connection === 'open') {
+            reconnectAttempts.set(instanceId, 0);
+            updateSessionStatus(instanceId, 'online', { companyName: config.companyName, provider: 'baileys', tenantId: config.tenantId }).catch(() => null);
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type === 'notify') {
-            for (const msg of messages) await handleQRMessage(sock, msg, instanceId);
-        }
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        for (const msg of messages) await handleQRMessage(sock, msg, instanceId);
     });
+
+    return sock;
 }
 
-// Connect WhatsApp (QR) - ASYNC CORE
+// --- ENDPOINTS ---
 router.post('/connect', async (req, res) => {
-    const { companyName, customPrompt } = req.body;
+    const { companyName, customPrompt, provider, tenantId } = req.body || {};
+    const cleanName = String(companyName || '').trim();
+    if (!cleanName) return res.status(400).json({ error: 'companyName is required' });
+
     const instanceId = `alex_${Date.now()}`;
+    // Prioritize authenticated tenant ID
+    const effectiveTenantId = req.tenant?.id || tenantId || req.headers['x-tenant-id'];
+    const config = { companyName: cleanName, customPrompt, provider: provider || 'baileys', tenantId: effectiveTenantId };
 
     try {
-        // Init status
-        sessionStatus.set(instanceId, 'connecting');
-
-        // Start connection process in background
-        connectToWhatsApp(instanceId, { companyName, customPrompt });
-
-        // Return immediately so frontend can start polling
-        res.json({
-            success: true,
-            message: 'Iniciando conexión...',
-            instance_id: instanceId,
-            status: 'connecting'
-        });
+        await connectToWhatsApp(instanceId, config, res);
     } catch (err) {
-        if (!res.headersSent) res.status(500).json({ error: err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
-// Polling endpoint for frontend
-router.get('/status/:instanceId', async (req, res) => {
+router.post('/config/:instanceId', async (req, res) => {
     const { instanceId } = req.params;
-    const status = sessionStatus.get(instanceId) || 'disconnected';
-    const qr = sessionQRs.get(instanceId) || null;
-    res.json({ instance_id: instanceId, status: status, qr_code: qr });
+    const config = req.body;
+    if (!config) return res.status(400).json({ error: 'Config is required' });
+
+    clientConfigs.set(instanceId, { ...clientConfigs.get(instanceId), ...config });
+    await updateSessionStatus(instanceId, 'online', config); // Keep online if updated
+    res.json({ success: true });
 });
 
-router.post('/webhook', async (req, res) => {
-    const body = req.body;
-    if (body.object) {
-        const msg = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-        if (msg) await handleCloudMessage(msg);
-        res.sendStatus(200);
-    } else res.sendStatus(404);
+router.post('/disconnect', async (req, res) => {
+    const { instanceId } = req.body || {};
+    const session = activeSessions.get(instanceId);
+    if (session) {
+        try { session.logout(); } catch (_) { }
+        clearSessionRuntime(instanceId);
+    }
+    await safeDeletePersistentSession(instanceId);
+    sessionStatus.delete(instanceId);
+    try { fs.rmSync(`${sessionsDir}/${instanceId}`, { recursive: true, force: true }); } catch (_) { }
+    res.json({ success: true });
+});
+
+router.get('/status', (req, res) => {
+    const tenantId = req.tenant?.id || req.query.tenantId || req.headers['x-tenant-id'];
+    let sessions = Array.from(sessionStatus.entries()).map(([id, info]) => ({ instanceId: id, ...info }));
+
+    // Filter by tenant if provided (Multi-tenancy real)
+    if (tenantId) {
+        sessions = sessions.filter(s => s.tenantId === tenantId);
+    }
+
+    res.json({
+        active_sessions: sessions.length,
+        sessions,
+        uptime: process.uptime()
+    });
+});
+
+router.get('/status/:instanceId', (req, res) => {
+    const info = sessionStatus.get(req.params.instanceId);
+    if (!info) return res.status(404).json({ error: 'Not found' });
+    res.json({ instance_id: req.params.instanceId, ...info });
 });
 
 module.exports = router;

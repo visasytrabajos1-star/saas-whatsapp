@@ -1,305 +1,333 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Zap, DollarSign, Activity, Users, FileText, QrCode, Cloud, Lock, Settings } from 'lucide-react';
-import axios from 'axios';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Shield, Activity, Settings, Smartphone, Plus, Loader, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { fetchJsonWithApiFallback, getLastResolvedApiBase, getPreferredApiBase } from '../api';
 
-// API configuration
-const getBaseUrl = () => {
-    if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
-    if (typeof window !== 'undefined') return window.location.origin;
-    return 'http://localhost:3000';
-};
+const PROVIDERS = [
+  { value: 'baileys', label: 'Baileys (QR)' },
+  { value: 'meta', label: 'Meta Cloud API' },
+  { value: '360dialog', label: '360Dialog' }
+];
 
-const api = axios.create({
-    baseURL: getBaseUrl(),
-});
+function SaasDashboard() {
+  const [instances, setInstances] = useState([
+    { id: 1, name: 'Mi Negocio', status: 'online', phone: '+1234567890', provider: 'baileys' }
+  ]);
+  const [selected, setSelected] = useState(null);
+  const [connecting, setConnecting] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [qrCode, setQrCode] = useState(null);
+  const [apiDebugUrl, setApiDebugUrl] = useState(getPreferredApiBase() || 'No resuelta');
+  const [notice, setNotice] = useState(null);
+  const [configDraft, setConfigDraft] = useState({
+    provider: 'baileys',
+    customPrompt: 'Eres un asistente virtual amigable y profesional.',
+    metaApiUrl: '',
+    metaPhoneNumberId: '',
+    metaAccessToken: '',
+    dialogApiKey: ''
+  });
 
-const SaasDashboard = () => {
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [password, setPassword] = useState('');
-    const [activeTab, setActiveTab] = useState('clients'); // Default tab
+  useEffect(() => {
+    const resolved = getLastResolvedApiBase();
+    if (resolved) setApiDebugUrl(resolved);
+  }, []);
 
-    const handleLogin = (e) => {
-        e.preventDefault();
-        if (password === 'Lore2027$') {
-            setIsAuthenticated(true);
-        } else {
-            alert('Acceso Denegado');
-        }
-    };
-
-    if (!isAuthenticated) {
-        return (
-            <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 text-white">
-                <form onSubmit={handleLogin} className="bg-slate-800 p-8 rounded-2xl w-full max-w-md border border-slate-700">
-                    <h2 className="text-2xl font-bold mb-6 text-center">SaaS Admin Panel</h2>
-                    <input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white mb-4"
-                        placeholder="Contraseña Maestra"
-                    />
-                    <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-lg font-bold">Entrar</button>
-                </form>
-            </div>
-        );
-    }
-
-    return (
-        <div className="min-h-screen bg-slate-900 text-white flex">
-            {/* Sidebar */}
-            <aside className="w-64 bg-slate-800 border-r border-slate-700 p-6 hidden md:flex flex-col">
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent mb-8">
-                    Xari SaaS
-                </h1>
-
-                <nav className="space-y-2 flex-1">
-                    <SidebarItem icon={<Users />} label="Clientes Activos" active={activeTab === 'clients'} onClick={() => setActiveTab('clients')} />
-                    <SidebarItem icon={<Zap />} label="Generador Bots" active={activeTab === 'bots'} onClick={() => setActiveTab('bots')} />
-                    <SidebarItem icon={<DollarSign />} label="Facturación" active={activeTab === 'billing'} onClick={() => setActiveTab('billing')} />
-                    <SidebarItem icon={<Activity />} label="Métricas Uso" active={activeTab === 'metrics'} onClick={() => setActiveTab('metrics')} />
-                    <SidebarItem icon={<Settings />} label="Configuración" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
-                </nav>
-
-                <div className="mt-auto pt-6 border-t border-slate-700">
-                    <p className="text-xs text-slate-500">v2.0.0 - Multi-Tenant Core</p>
-                </div>
-            </aside>
-
-            {/* Main Content */}
-            <main className="flex-1 p-8 overflow-y-auto">
-                {activeTab === 'clients' && <ClientsSection />}
-                {activeTab === 'bots' && <BotGeneratorSection />}
-                {activeTab === 'billing' && <BillingSection />}
-                {/* Add other sections as needed */}
-            </main>
-        </div>
-    );
-};
-
-const SidebarItem = ({ icon, label, active, onClick }) => (
-    <button
-        onClick={onClick}
-        className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${active ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}
-    >
-        {React.cloneElement(icon, { size: 20 })}
-        <span className="font-medium">{label}</span>
-    </button>
-);
-
-// --- SECCIONES ---
-
-const ClientsSection = () => {
-    // Mock Data for MVP
-    const clients = [
-        { id: 1, name: 'Pizzería Don Mario', plan: 'Pro', status: 'active', renewal: '15 Feb', mrr: '$49' },
-        { id: 2, name: 'Consultorio Dental Vital', plan: 'Enterprise', status: 'active', renewal: '01 Mar', mrr: '$99' },
-        { id: 3, name: 'Tienda de Ropa Fashion', plan: 'Basic', status: 'pending', renewal: '-', mrr: '$29' },
-    ];
-
-    return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <h2 className="text-3xl font-bold mb-6">Clientes Activos</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <MetricCard title="MRR Total" value="$177" trend="+12%" icon={<DollarSign className="text-green-400" />} />
-                <MetricCard title="Clientes Activos" value="3" trend="+1" icon={<Users className="text-blue-400" />} />
-                <MetricCard title="Bots Online" value="2" trend="stable" icon={<Zap className="text-yellow-400" />} />
-            </div>
-
-            <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
-                <table className="w-full text-left">
-                    <thead className="bg-slate-900/50 text-slate-400 text-xs uppercase font-semibold">
-                        <tr>
-                            <th className="p-4">Cliente</th>
-                            <th className="p-4">Plan</th>
-                            <th className="p-4">Estado</th>
-                            <th className="p-4">Renovación</th>
-                            <th className="p-4">MRR</th>
-                            <th className="p-4">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-700 text-sm">
-                        {clients.map(client => (
-                            <tr key={client.id} className="hover:bg-slate-700/30 transition-colors">
-                                <td className="p-4 font-medium text-white">{client.name}</td>
-                                <td className="p-4"><span className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded-full text-xs font-bold">{client.plan}</span></td>
-                                <td className="p-4">
-                                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${client.status === 'active' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-500'}`}>
-                                        {client.status.toUpperCase()}
-                                    </span>
-                                </td>
-                                <td className="p-4 text-slate-400">{client.renewal}</td>
-                                <td className="p-4 text-white font-mono">{client.mrr}</td>
-                                <td className="p-4">
-                                    <button className="text-blue-400 hover:text-blue-300 mr-3">Editar</button>
-                                    <button className="text-red-400 hover:text-red-300">Pausar</button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </motion.div>
-    );
-};
-
-const BotGeneratorSection = () => {
-    const [formData, setFormData] = useState({
-        companyName: '',
-        businessType: 'generic',
-        connectionType: 'QR',
-        customPrompt: ''
+  useEffect(() => {
+    if (!selected) return;
+    setConfigDraft({
+      provider: selected.provider || 'baileys',
+      customPrompt: selected.customPrompt || 'Eres un asistente virtual amigable y profesional.',
+      metaApiUrl: selected.metaApiUrl || '',
+      metaPhoneNumberId: selected.metaPhoneNumberId || '',
+      metaAccessToken: selected.metaAccessToken || '',
+      dialogApiKey: selected.dialogApiKey || ''
     });
-    const [loading, setLoading] = useState(false);
-    const [result, setResult] = useState(null);
+  }, [selected]);
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-        setResult(null);
+  const pushNotice = (type, message) => setNotice({ type, message });
 
-        try {
-            // Call the SaaS backend
-            const response = await api.post('/saas/connect', formData);
-            setResult(response.data);
-        } catch (err) {
-            setResult({ error: 'Error al conectar: ' + (err.response?.data?.error || err.message) });
-        } finally {
-            setLoading(false);
+  const providerLabel = useMemo(() => {
+    const found = PROVIDERS.find((p) => p.value === (selected?.provider || 'baileys'));
+    return found?.label || 'Baileys (QR)';
+  }, [selected]);
+
+  const waitForQr = (instanceId) => new Promise((resolve, reject) => {
+    const timeoutMs = 120000;
+    const startedAt = Date.now();
+
+    const poll = async () => {
+      try {
+        const { response: statusRes, data: statusData } = await fetchJsonWithApiFallback(`/api/saas/status/${instanceId}`, { timeoutMs: 30000 });
+        setApiDebugUrl(getLastResolvedApiBase() || getPreferredApiBase() || 'No resuelta');
+
+        if (!statusRes.ok) return;
+        if (statusData.qr_code) {
+          clearInterval(intervalId);
+          return resolve({ type: 'qr', value: statusData.qr_code });
         }
+
+        if (statusData.status === 'online') {
+          clearInterval(intervalId);
+          return resolve({ type: 'online' });
+        }
+
+        if (statusData.status === 'disconnected') {
+          clearInterval(intervalId);
+          return reject(new Error('WhatsApp desconectó la sesión durante el enlace. Reintenta.'));
+        }
+      } catch (_) {
+        // keep polling
+      }
+
+      if (Date.now() - startedAt >= timeoutMs) {
+        clearInterval(intervalId);
+        reject(new Error('No se recibió QR a tiempo. Verifica backend/WhatsApp y reintenta.'));
+      }
     };
 
-    return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <h2 className="text-3xl font-bold mb-6">Generador de Bots (SaaS)</h2>
+    const intervalId = setInterval(poll, 5000);
+    poll();
+  });
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-slate-800 p-8 rounded-2xl border border-slate-700">
-                    <h3 className="text-xl font-bold mb-6">Nueva Instancia</h3>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div>
-                            <label className="block text-slate-400 text-sm mb-2">Nombre Cliente</label>
-                            <input
-                                type="text"
-                                required
-                                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white"
-                                placeholder="Ej: TechStore SA"
-                                value={formData.companyName}
-                                onChange={e => setFormData({ ...formData, companyName: e.target.value })}
-                            />
-                        </div>
+  const handleCreateNew = async () => {
+    const rawName = prompt('Nombre de tu nuevo bot:');
+    const name = (rawName || '').trim();
+    if (!name) return;
 
-                        <div>
-                            <label className="block text-slate-400 text-sm mb-2">Plantilla de Negocio</label>
-                            <select
-                                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white"
-                                value={formData.businessType}
-                                onChange={e => setFormData({ ...formData, businessType: e.target.value })}
-                            >
-                                <option value="generic">Genérico (Soporte)</option>
-                                <option value="pizzeria">Restaurante / Delivery</option>
-                                <option value="dentista">Salud / Turnos</option>
-                                <option value="ecommerce">E-commerce (Catálogo)</option>
-                                <option value="custom">✏️ Personalizado</option>
-                            </select>
-                        </div>
+    const rawProvider = prompt('Canal (baileys | meta | 360dialog):', 'baileys');
+    const provider = ['baileys', 'meta', '360dialog'].includes((rawProvider || '').trim()) ? (rawProvider || '').trim() : 'baileys';
 
-                        {formData.businessType === 'custom' && (
-                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}>
-                                <label className="block text-slate-400 text-sm mb-2">Prompt del Sistema</label>
-                                <textarea
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white font-mono text-sm h-32"
-                                    placeholder="Eres un experto en..."
-                                    value={formData.customPrompt}
-                                    onChange={e => setFormData({ ...formData, customPrompt: e.target.value })}
-                                />
-                            </motion.div>
-                        )}
+    setConnecting(true);
+    setNotice(null);
 
-                        <div>
-                            <label className="block text-slate-400 text-sm mb-2">Método de Conexión</label>
-                            <div className="grid grid-cols-2 gap-4">
-                                <button type="button" onClick={() => setFormData({ ...formData, connectionType: 'QR' })} className={`p-4 rounded-xl border flex flex-col items-center gap-2 ${formData.connectionType === 'QR' ? 'bg-green-600 border-green-500' : 'bg-slate-900 border-slate-700'}`}>
-                                    <QrCode />
-                                    <span className="font-bold">WhatsApp Web (QR)</span>
-                                </button>
-                                <button type="button" onClick={() => setFormData({ ...formData, connectionType: 'API' })} className={`p-4 rounded-xl border flex flex-col items-center gap-2 ${formData.connectionType === 'API' ? 'bg-blue-600 border-blue-500' : 'bg-slate-900 border-slate-700'}`}>
-                                    <Cloud />
-                                    <span className="font-bold">Cloud API (Meta)</span>
-                                </button>
-                            </div>
-                        </div>
+    try {
+      const { response: res, data } = await fetchJsonWithApiFallback('/api/saas/connect', {
+        timeoutMs: 120000,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyName: name,
+          customPrompt: `Eres un asistente virtual de ${name}`,
+          provider,
+          metaApiUrl: '',
+          metaPhoneNumberId: '',
+          metaAccessToken: '',
+          dialogApiKey: ''
+        })
+      });
 
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 py-4 rounded-xl font-bold text-lg shadow-lg mt-4 disabled:opacity-50"
-                        >
-                            {loading ? 'Inicializando...' : 'Crear Bot'}
-                        </button>
-                    </form>
+      setApiDebugUrl(getLastResolvedApiBase() || getPreferredApiBase() || 'No resuelta');
+
+      if (!res.ok && res.status !== 408) {
+        throw new Error(data.error || `Error de conexión (HTTP ${res.status})`);
+      }
+
+      const instance = {
+        id: Date.now(),
+        instanceId: data.instance_id,
+        name,
+        provider,
+        customPrompt: `Eres un asistente virtual de ${name}`,
+        metaApiUrl: '',
+        metaPhoneNumberId: '',
+        metaAccessToken: '',
+        dialogApiKey: ''
+      };
+
+      if (provider !== 'baileys') {
+        const cloudInstance = { ...instance, status: 'online', phone: provider === 'meta' ? 'Meta Cloud API' : '360Dialog' };
+        setInstances((prev) => [...prev, cloudInstance]);
+        setSelected(cloudInstance);
+        pushNotice('success', data.message || 'Bot cloud configurado correctamente.');
+        return;
+      }
+
+      let qr = data.qr_code;
+
+      if (!qr && res.status === 408 && data.instance_id) {
+        pushNotice('warning', 'Conexión lenta detectada: intentando recuperar QR automáticamente...');
+        const result = await waitForQr(data.instance_id);
+
+        if (result.type === 'online') {
+          const onlineInstance = { ...instance, status: 'online', phone: 'Conectado' };
+          setInstances((prev) => [...prev, onlineInstance]);
+          setSelected(onlineInstance);
+          pushNotice('success', 'La instancia se conectó correctamente sin requerir nuevo QR.');
+          return;
+        }
+
+        qr = result.value;
+      }
+
+      if (!qr) throw new Error(data.error || 'No se recibió código QR.');
+
+      setQrCode(qr);
+      const connectingInstance = { ...instance, status: 'connecting', phone: 'Escaneando QR...' };
+      setInstances((prev) => [...prev, connectingInstance]);
+      setSelected(connectingInstance);
+      pushNotice('success', 'QR generado correctamente. Escanéalo para finalizar conexión.');
+    } catch (error) {
+      pushNotice('error', error.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    if (!selected) return;
+
+    const merged = { ...selected, ...configDraft };
+    setSavingConfig(true);
+
+    try {
+      if (selected.instanceId) {
+        const { data } = await fetchJsonWithApiFallback(`/api/saas/config/${selected.instanceId}`, {
+          timeoutMs: 30000,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(configDraft)
+        });
+
+        if (!data.success) throw new Error(data.error || 'No se pudo guardar configuración.');
+      }
+
+      setInstances((prev) => prev.map((inst) => (inst.id === selected.id ? merged : inst)));
+      setSelected(merged);
+      pushNotice('success', `Configuración guardada (${providerLabel}).`);
+    } catch (error) {
+      pushNotice('error', error.message);
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-white font-sans">
+      {qrCode && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-slate-800 p-8 rounded-xl text-center max-w-sm w-full">
+            <h2 className="text-2xl font-bold mb-4">Escanea el QR</h2>
+            <img src={qrCode} alt="QR" className="border-4 border-white p-2 rounded mb-4 mx-auto" />
+            <button onClick={() => setQrCode(null)} className="text-blue-500">Cerrar</button>
+          </div>
+        </div>
+      )}
+
+      <header className="bg-slate-950 border-b border-slate-800 p-4 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <Shield className="text-blue-500" size={28} />
+          <h1 className="text-2xl font-bold">ALEX <span className="text-blue-500">IO</span></h1>
+        </div>
+        <div className="flex gap-4">
+          <Link to="/pricing" className="bg-blue-600 px-4 py-2 rounded font-bold hover:bg-blue-500">Planes</Link>
+        </div>
+      </header>
+
+      {notice && (
+        <div className={`mx-6 mt-4 p-3 rounded-lg border text-sm flex items-center gap-2 ${notice.type === 'error' ? 'bg-red-900/30 border-red-700 text-red-200' : notice.type === 'warning' ? 'bg-yellow-900/20 border-yellow-700 text-yellow-200' : 'bg-green-900/20 border-green-700 text-green-200'
+          }`}>
+          {notice.type === 'error' ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+          <span>{notice.message}</span>
+        </div>
+      )}
+
+      <main className="flex h-[calc(100vh-64px)]">
+        <aside className="w-64 bg-slate-950 border-r border-slate-800 p-4">
+          <h2 className="text-xs font-bold uppercase text-slate-500 tracking-widest mb-4">Mis Bots</h2>
+          <div className="space-y-2">
+            {instances.map((inst) => (
+              <button key={inst.id} onClick={() => setSelected(inst)} className={`w-full text-left p-3 rounded-lg flex items-center justify-between ${selected?.id === inst.id ? 'bg-blue-600' : 'bg-slate-900 hover:bg-slate-800'}`}>
+                <div>
+                  <div className="font-medium">{inst.name}</div>
+                  <div className="text-xs text-slate-400">{inst.phone}</div>
                 </div>
+                <div className={`w-2 h-2 rounded-full ${inst.status === 'online' ? 'bg-green-500' : inst.status === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'}`} />
+              </button>
+            ))}
+          </div>
+          <button onClick={handleCreateNew} disabled={connecting} className="w-full mt-4 py-2 border border-dashed border-slate-700 text-slate-500 rounded-lg hover:border-blue-500 hover:text-blue-500 flex items-center justify-center gap-2 disabled:opacity-50">
+            {connecting ? <Loader className="animate-spin" size={16} /> : <Plus size={16} />} Nuevo Bot
+          </button>
+        </aside>
 
-                <div className="bg-slate-800 p-8 rounded-2xl border border-slate-700 flex flex-col items-center justify-center min-h-[400px]">
-                    {!result && !loading && (
-                        <div className="text-center text-slate-500">
-                            <Zap size={48} className="mx-auto mb-4 opacity-20" />
-                            <p>Configura el bot para ver el<br />QR o credenciales aquí.</p>
-                        </div>
-                    )}
+        <div className="flex-1 p-6 overflow-auto">
+          {selected ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Settings size={20} className="text-blue-500" /> Configuración</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Nombre del Bot</label>
+                    <input className="w-full bg-slate-900 border border-slate-700 rounded p-2" value={configDraft.name || selected.name} onChange={(e) => setConfigDraft((prev) => ({ ...prev, name: e.target.value }))} />
+                  </div>
 
-                    {loading && (
-                        <div className="text-center">
-                            <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                            <p className="text-blue-400 font-bold">Conectando con Servidor...</p>
-                        </div>
-                    )}
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Canal WhatsApp</label>
+                    <select className="w-full bg-slate-900 border border-slate-700 rounded p-2" value={configDraft.provider} onChange={(e) => setConfigDraft((prev) => ({ ...prev, provider: e.target.value }))}>
+                      {PROVIDERS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                    </select>
+                  </div>
 
-                    {result && result.success && result.connection_type === 'QR' && (
-                        <div className="text-center">
-                            <h3 className="text-2xl font-bold mb-4">¡Escanea Ahora!</h3>
-                            <div className="bg-white p-4 rounded-xl inline-block shadow-2xl mb-4">
-                                <img src={result.qr_code} alt="QR" className="w-64 h-64" />
-                            </div>
-                            <p className="text-slate-400 text-sm">Sesión ID: <span className="font-mono text-white">{result.instance_id}</span></p>
-                        </div>
-                    )}
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Prompt Personalizado</label>
+                    <textarea className="w-full bg-slate-900 border border-slate-700 rounded p-2 h-32" value={configDraft.customPrompt} onChange={(e) => setConfigDraft((prev) => ({ ...prev, customPrompt: e.target.value }))} />
+                  </div>
 
-                    {result && result.error && (
-                        <div className="bg-red-900/20 text-red-400 p-6 rounded-xl border border-red-500/30">
-                            <p className="font-bold">Error de Conexión</p>
-                            <p className="text-sm">{result.error}</p>
-                        </div>
-                    )}
+                  {configDraft.provider === 'meta' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm text-slate-400 mb-1">Meta API URL</label>
+                        <input className="w-full bg-slate-900 border border-slate-700 rounded p-2" placeholder="https://graph.facebook.com/v20.0" value={configDraft.metaApiUrl} onChange={(e) => setConfigDraft((prev) => ({ ...prev, metaApiUrl: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-slate-400 mb-1">Phone Number ID</label>
+                        <input className="w-full bg-slate-900 border border-slate-700 rounded p-2" value={configDraft.metaPhoneNumberId} onChange={(e) => setConfigDraft((prev) => ({ ...prev, metaPhoneNumberId: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-slate-400 mb-1">Access Token</label>
+                        <input className="w-full bg-slate-900 border border-slate-700 rounded p-2" type="password" value={configDraft.metaAccessToken} onChange={(e) => setConfigDraft((prev) => ({ ...prev, metaAccessToken: e.target.value }))} />
+                      </div>
+                    </div>
+                  )}
+
+                  {configDraft.provider === '360dialog' && (
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">360Dialog API Key</label>
+                      <input className="w-full bg-slate-900 border border-slate-700 rounded p-2" type="password" value={configDraft.dialogApiKey} onChange={(e) => setConfigDraft((prev) => ({ ...prev, dialogApiKey: e.target.value }))} />
+                    </div>
+                  )}
+
+                  <button onClick={handleSaveConfig} disabled={savingConfig} className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded font-bold disabled:opacity-50">
+                    {savingConfig ? 'Guardando...' : 'Guardar'}
+                  </button>
                 </div>
+              </div>
+
+              <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Activity size={20} className="text-green-500" /> Actividad Reciente</h3>
+                <div className="space-y-3">
+                  <div className="bg-slate-900 p-3 rounded border border-slate-800 text-sm">
+                    <p className="text-slate-300">Canal activo: {providerLabel}</p>
+                    <p className="text-blue-400 mt-1 text-xs">Estado: {selected.status || 'desconocido'}</p>
+                  </div>
+                </div>
+              </div>
             </div>
-        </motion.div>
-    );
-};
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-slate-500">
+              <Smartphone size={64} className="mb-4 opacity-20" />
+              <p>Selecciona un bot para comenzar</p>
+            </div>
+          )}
+        </div>
+      </main>
 
-const BillingSection = () => (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <h2 className="text-3xl font-bold mb-6">Facturación</h2>
-        <div className="bg-slate-800 p-8 rounded-2xl border border-slate-700 text-center">
-            <DollarSign size={48} className="mx-auto text-slate-600 mb-4" />
-            <p className="text-slate-400">Panel de integración con Stripe / MercadoPago en construcción.</p>
-        </div>
-    </motion.div>
-);
-
-const MetricCard = ({ title, value, trend, icon }) => (
-    <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 flex justify-between items-start">
-        <div>
-            <p className="text-slate-400 text-sm mb-1">{title}</p>
-            <h3 className="text-3xl font-bold text-white mb-2">{value}</h3>
-            {trend && <span className="px-2 py-1 bg-slate-700 rounded text-xs text-green-400 font-bold">{trend}</span>}
-        </div>
-        <div className="p-3 bg-slate-700/50 rounded-xl">
-            {icon}
-        </div>
+      <footer className="fixed bottom-2 right-3 text-[11px] text-slate-400 bg-slate-950/90 border border-slate-800 px-2 py-1 rounded">
+        API activa: {apiDebugUrl}
+      </footer>
     </div>
-);
+  );
+}
 
-export default SaasDashboard;
+export default Dashboard;

@@ -26,7 +26,7 @@ const PLANS = [
       'IA Avanzada + Fallback',
       'Soporte Prioritario',
       'Panel de Control',
-      'Branding Personalizado'
+      'API Access'
     ]
   },
   {
@@ -100,93 +100,117 @@ function Pricing() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Tu correo electrónico"
-            className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-center text-lg focus:border-blue-500 outline-none"
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-center text-xl font-bold focus:border-blue-500 outline-none"
           />
         </div>
 
-        <div className="grid md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
           {PLANS.map((plan) => (
             <div
               key={plan.id}
-              className={`bg-slate-800 rounded-2xl p-8 border ${plan.popular ? 'border-blue-500 relative' : 'border-slate-700'}`}
+              className={`bg-slate-800 rounded-2xl p-8 border-2 transition-all duration-300 relative ${plan.popular ? 'border-blue-500 scale-105 shadow-2xl shadow-blue-500/20' : 'border-slate-700 hover:border-slate-500'}`}
             >
               {plan.popular && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-blue-500 px-4 py-1 rounded-full text-sm font-bold">
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-blue-500 px-3 py-1 rounded-full text-xs font-black uppercase">
                   Más Popular
                 </div>
               )}
               <h3 className="text-2xl font-bold mb-2">{plan.name}</h3>
-              <div className="text-4xl font-bold mb-6">${plan.price}<span className="text-lg text-slate-400">/mes</span></div>
+              <div className="flex items-baseline gap-1 mb-6">
+                <span className="text-4xl font-black">${plan.price}</span>
+                <span className="text-slate-400">/mes</span>
+              </div>
 
               <ul className="space-y-4 mb-8">
                 {plan.features.map((feature, i) => (
-                  <li key={i} className="flex items-center gap-2 text-slate-300">
-                    <Check size={18} className="text-blue-500" /> {feature}
+                  <li key={i} className="flex gap-3 text-sm text-slate-300">
+                    <Check className="text-blue-500 shrink-0" size={18} />
+                    {feature}
                   </li>
                 ))}
               </ul>
 
-              <div className="space-y-4">
-                <div className="flex bg-slate-900 p-1 rounded-lg">
-                  <button
-                    onClick={() => setPaymentMethod('stripe')}
-                    className={`flex-1 py-2 rounded-md flex items-center justify-center gap-2 ${paymentMethod === 'stripe' ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
-                  >
-                    <CreditCard size={18} /> Card
-                  </button>
-                  <button
-                    onClick={() => setPaymentMethod('crypto')}
-                    className={`flex-1 py-2 rounded-md flex items-center justify-center gap-2 ${paymentMethod === 'crypto' ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
-                  >
-                    <Bitcoin size={18} /> Crypto
-                  </button>
-                </div>
-
-                {paymentMethod === 'crypto' && (
-                  <select
-                    value={cryptoCurrency}
-                    onChange={(e) => setCryptoCurrency(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm outline-none"
-                  >
-                    <option value="USDT">USDT (TRC20)</option>
-                    <option value="BTC">Bitcoin</option>
-                    <option value="ETH">Ethereum</option>
-                  </select>
-                )}
-
-                <button
-                  onClick={() => paymentMethod === 'stripe' ? handleStripePayment(plan.id) : handleCryptoPayment(plan.id)}
-                  disabled={loading || !email}
-                  className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${plan.popular ? 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20' : 'bg-slate-700 hover:bg-slate-600'} disabled:opacity-50`}
-                >
-                  {loading ? (
-                    <Loader className="animate-spin mx-auto" size={24} />
-                  ) : (
-                    `Contratar ${plan.name}`
-                  )}
-                </button>
-              </div>
+              <button
+                onClick={() => setSelectedPlan(plan)}
+                className={`w-full py-4 rounded-xl font-black transition-all ${plan.popular ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-700 hover:bg-slate-600'}`}
+              >
+                Elegir {plan.name}
+              </button>
             </div>
           ))}
         </div>
 
-        {invoice && (
-          <div className="mt-12 bg-slate-800 p-8 rounded-2xl border border-yellow-500/30 max-w-2xl mx-auto shadow-2xl">
-            <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-yellow-500">
-              <Bitcoin /> Factura Crypto Generada
-            </h3>
-            <div className="space-y-4">
-              <div className="bg-slate-900 p-4 rounded-lg break-all font-mono">
-                <p className="text-xs text-slate-500 mb-1 uppercase tracking-wider">Dirección de pago ({invoice.currency})</p>
-                <p className="text-blue-400 text-sm font-bold">{invoice.address}</p>
+        {selectedPlan && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+            <div className="bg-slate-800 rounded-3xl p-8 max-w-md w-full border border-slate-700 shadow-2xl">
+              <h2 className="text-2xl font-bold mb-2 text-center">Finalizar Pago</h2>
+              <p className="text-slate-400 text-center mb-8">Plan {selectedPlan.name} - ${selectedPlan.price}/mes</p>
+
+              <div className="space-y-4">
+                <button
+                  onClick={() => handleStripePayment(selectedPlan.id)}
+                  disabled={loading || !email}
+                  className="w-full bg-blue-600 hover:bg-blue-700 p-4 rounded-2xl flex items-center justify-between font-bold disabled:opacity-50"
+                >
+                  <div className="flex items-center gap-3">
+                    <CreditCard size={24} /> Tarjeta de Crédito (Stripe)
+                  </div>
+                  {loading && <Loader className="animate-spin" size={20} />}
+                </button>
+
+                <button
+                  onClick={() => setPaymentMethod('crypto')}
+                  disabled={loading || !email}
+                  className="w-full bg-slate-700 hover:bg-slate-600 p-4 rounded-2xl flex items-center justify-between font-bold disabled:opacity-50"
+                >
+                  <div className="flex items-center gap-3">
+                    <Bitcoin size={24} /> Criptomonedas (USDT/BTC)
+                  </div>
+                </button>
+
+                {paymentMethod === 'crypto' && (
+                  <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 mt-4">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Selecciona Moneda</label>
+                    <div className="flex gap-2">
+                      {['USDT', 'BTC', 'ETH'].map(cur => (
+                        <button
+                          key={cur}
+                          onClick={() => setCryptoCurrency(cur)}
+                          className={`flex-1 p-2 rounded-lg text-sm font-bold border transition-all ${cryptoCurrency === cur ? 'bg-blue-600 border-blue-500' : 'bg-slate-800 border-slate-700'}`}
+                        >
+                          {cur}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => handleCryptoPayment(selectedPlan.id)}
+                      className="w-full bg-orange-600 hover:bg-orange-500 mt-4 p-3 rounded-xl font-bold flex items-center justify-center gap-2"
+                    >
+                      Generar Factura {cryptoCurrency}
+                    </button>
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-400">Monto a enviar:</span>
-                <span className="text-xl font-bold text-white">{invoice.amount_crypto} {invoice.currency}</span>
-              </div>
-              <p className="text-[10px] text-slate-500 italic text-center">
-                El plan se activará automáticamente tras 2 confirmaciones en la red.
-              </p>
+
+              {invoice && (
+                <div className="mt-8 p-4 bg-green-900/20 border border-green-700 rounded-2xl text-center">
+                  <h4 className="font-bold text-green-400 mb-2">Factura Generada</h4>
+                  <p className="text-sm text-green-200 mb-4">Envía {invoice.amount} {invoice.currency} a:</p>
+                  <code className="block bg-black p-3 rounded-lg text-xs break-all mb-4">{invoice.address}</code>
+                  <div className="bg-white p-2 inline-block rounded-lg mb-4">
+                    <img src={invoice.qr} alt="Crypto QR" className="w-32 h-32" />
+                  </div>
+                  <p className="text-[10px] text-slate-500 italic">El acceso se activará tras 2 confirmaciones en la red</p>
+                </div>
+              )}
+
+              <button
+                onClick={() => setSelectedPlan(null)}
+                className="w-full mt-6 text-slate-500 text-sm hover:text-white transition-colors"
+                disabled={loading}
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         )}

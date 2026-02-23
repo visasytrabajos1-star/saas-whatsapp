@@ -1,13 +1,13 @@
 services:
   - type: web
-    name: alex-io-server-prod
-    version: 2.1.0
+    name: whatsapp-fullstack
+    version: 2.0.4
     env: node
     region: oregon
     plan: free
     rootDir: server
     buildCommand: npm install
-    startCommand: node index-minimal.js
+    startCommand: node index.js
     envVars:
       - key: NODE_ENV
         value: production
@@ -16,7 +16,7 @@ services:
       - key: WHATSAPP_MAX_RECONNECT_ATTEMPTS
         value: "8"
       - key: WHATSAPP_SESSIONS_TABLE
-        value: "saas_instances"
+        value: "whatsapp_sessions"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
@@ -31,7 +31,7 @@ services:
         value: alex_prod_safe_token_2026
 
   - type: static
-    name: alex-io-client-prod
+    name: whatsapp-fullstack-1
     env: static
     region: oregon
     rootDir: client

@@ -78,7 +78,7 @@ function App() {
 
             <Route path="/dashboard" element={
               <ProtectedRoute>
-                <WhatsAppConnect />
+                <SaasDashboard />
               </ProtectedRoute>
             } />
 
