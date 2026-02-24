@@ -55,8 +55,19 @@ export default function Login() {
                     body: JSON.stringify({ email })
                 });
 
-                if (!res.ok) throw new Error(`Error del servidor (${res.status})`);
-                const data = await res.json();
+                const text = await res.text();
+                if (!text || !text.trim()) {
+                    throw new Error('El servidor está iniciando. Espera 30 segundos y reintenta.');
+                }
+
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (_) {
+                    throw new Error('Respuesta inválida del servidor. Reintenta en unos segundos.');
+                }
+
+                if (!res.ok) throw new Error(data?.error || `Error del servidor (${res.status})`);
                 if (!data.token) throw new Error('El servidor no devolvió un token');
 
                 localStorage.setItem('alex_io_token', data.token);
