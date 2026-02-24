@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
+import { getPreferredApiBase } from '../api';
 import { useNavigate, Link } from 'react-router-dom';
 import { Loader2, ArrowLeft, Globe } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -46,7 +47,8 @@ export default function Login() {
                     import.meta.env.VITE_RENDER_BACKEND_URL ||
                     import.meta.env.VITE_API_URL ||
                     import.meta.env.VITE_BACKEND_URL ||
-                    'https://whatsapp-fullstack-1.onrender.com'
+                    getPreferredApiBase() ||
+                    'https://whatsapp-fullstack-gkm6.onrender.com'
                 ).replace(/\/$/, '');
 
                 const res = await fetch(`${backendBase}/api/auth/login`, {
