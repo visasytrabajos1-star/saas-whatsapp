@@ -1,3 +1,4 @@
+import { supabase } from './supabaseClient';
 const normalize = (url) => (url || '').replace(/\/$/, '');
 
 const RENDER_BACKEND_HINT = import.meta.env.VITE_RENDER_BACKEND_URL || 'https://whatsapp-fullstack-gkm6.onrender.com';
@@ -43,7 +44,7 @@ const shouldTryNextBase = (response) => {
   return [404, 502, 503, 504].includes(response.status);
 };
 
-import { supabase } from './supabaseClient';
+
 
 export const fetchWithApiFallback = async (path, options = {}) => {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options;
