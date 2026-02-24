@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { getPreferredApiBase } from '../api';
+import { fetchJsonWithApiFallback } from '../api';
 import { useNavigate, Link } from 'react-router-dom';
 import { Loader2, ArrowLeft, Globe } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -43,33 +43,12 @@ export default function Login() {
         // --- Fallback: si Supabase no está configurado, usar backend JWT ---
         if (!supabase) {
             try {
-                const backendBase = (
-                    import.meta.env.VITE_RENDER_BACKEND_URL ||
-                    import.meta.env.VITE_API_URL ||
-                    import.meta.env.VITE_BACKEND_URL ||
-                    getPreferredApiBase() ||
-                    'https://whatsapp-fullstack-gkm6.onrender.com'
-                ).replace(/\/$/, '');
-
-                const res = await fetch(`${backendBase}/api/auth/login`, {
+                const { data } = await fetchJsonWithApiFallback('/api/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email })
                 });
 
-                const text = await res.text();
-                if (!text || !text.trim()) {
-                    throw new Error('El servidor está iniciando. Espera 30 segundos y reintenta.');
-                }
-
-                let data;
-                try {
-                    data = JSON.parse(text);
-                } catch (_) {
-                    throw new Error('Respuesta inválida del servidor. Reintenta en unos segundos.');
-                }
-
-                if (!res.ok) throw new Error(data?.error || `Error del servidor (${res.status})`);
                 if (!data.token) throw new Error('El servidor no devolvió un token');
 
                 localStorage.setItem('alex_io_token', data.token);
