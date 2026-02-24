@@ -15,13 +15,15 @@ export default function Login() {
     const navigate = useNavigate();
 
     const handleGoogleLogin = async () => {
+        if (!supabase) {
+            setMessage('Google Auth requiere configuración de Supabase. Usa email y contraseña.');
+            return;
+        }
         setLoading(true);
         try {
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
-                options: {
-                    redirectTo: window.location.origin + '/dashboard'
-                }
+                options: { redirectTo: window.location.origin + '/dashboard' }
             });
             if (error) throw error;
         } catch (error) {
@@ -37,58 +39,63 @@ export default function Login() {
         setLoading(true);
         setMessage('');
 
-        console.log("Intentando auth:", { isSignUp, email, accountType });
+        // --- Fallback: si Supabase no está configurado, usar backend JWT ---
+        if (!supabase) {
+            try {
+                const backendBase = (
+                    import.meta.env.VITE_RENDER_BACKEND_URL ||
+                    import.meta.env.VITE_API_URL ||
+                    import.meta.env.VITE_BACKEND_URL ||
+                    'https://whatsapp-fullstack-1.onrender.com'
+                ).replace(/\/$/, '');
 
+                const res = await fetch(`${backendBase}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+
+                if (!res.ok) throw new Error(`Error del servidor (${res.status})`);
+                const data = await res.json();
+                if (!data.token) throw new Error('El servidor no devolvió un token');
+
+                localStorage.setItem('alex_io_token', data.token);
+                localStorage.setItem('demo_email', email);
+                console.log('Backend login OK, role:', data.role);
+                navigate('/dashboard');
+            } catch (error) {
+                console.error('Backend Login Error:', error);
+                setMessage(error.message || 'Error al conectar con el servidor');
+            } finally {
+                setLoading(false);
+            }
+            return;
+        }
+
+        // --- Ruta normal: Supabase disponible ---
         try {
             if (isSignUp) {
-                // Validación básica
-                /*
-                if (accountType === 'student' && accessCode.length < 6) {
-                    throw new Error('El código debe tener 6 caracteres.');
-                }
-                */
-
-                // SIMPLIFICADO: Sin opciones extra para probar si es el Redirect lo que falla
-                const { data, error } = await supabase.auth.signUp({
-                    email,
-                    password,
-                    // Eliminamos 'options' temporalmente para aislar el error 'Anonymous sign-ins disabled'
-                    // options: { ... } 
-                });
-
-                if (error) {
-                    console.error("Supabase Error:", error);
-                    throw error;
-                }
-
-                console.log("Registro Exitoso:", data);
-                setMessage('¡Registro exitoso! Si no entras directo, revisa tu email.');
-
-                // Auto login workaround or redirect logic
+                const { data, error } = await supabase.auth.signUp({ email, password });
+                if (error) throw error;
                 if (data.session) {
-                    if (accountType === 'freemium') navigate('/payment-setup');
-                    else navigate('/dashboard');
+                    navigate(accountType === 'freemium' ? '/payment-setup' : '/dashboard');
                 } else {
-                    // Caso donde requiere confirmación de email (común en producción)
                     setMessage('Registro creado. Por favor confirma tu email para ingresar.');
                 }
-
             } else {
-                const { data, error } = await supabase.auth.signInWithPassword({
-                    email,
-                    password,
-                });
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) throw error;
-                console.log("Login Exitoso:", data);
+                console.log('Login Exitoso:', data);
                 navigate('/dashboard');
             }
         } catch (error) {
-            console.error("Catch Error:", error);
-            setMessage(error.message || "Error desconocido");
+            console.error('Catch Error:', error);
+            setMessage(error.message || 'Error desconocido');
         } finally {
             setLoading(false);
         }
     };
+
 
     return (
         <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 relative overflow-hidden">
