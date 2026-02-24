@@ -96,7 +96,7 @@ app.post('/api/auth/login', (req, res) => {
 app.get('/', (req, res) => {
     res.json({
         status: 'online',
-        version: '2.0.4.12',
+        version: '2.0.4.13',
         platform: 'ALEX IO SAAS',
         features: ['V6 Protocol Hardening', 'V8 Multi-Tenancy', 'TTS Voice'],
         users: 'Optimized for scale'
