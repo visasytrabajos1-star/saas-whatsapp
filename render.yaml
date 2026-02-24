@@ -44,3 +44,7 @@ services:
         value: "20000"
       - key: VITE_RENDER_BACKEND_URL
         value: https://whatsapp-fullstack-gkm6.onrender.com
+      - key: VITE_SUPABASE_URL
+        value: https://ygsmooajrqldzdtcukfd.supabase.co
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
