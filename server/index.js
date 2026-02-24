@@ -101,8 +101,21 @@ app.post('/api/auth/login', (req, res) => {
     res.json({ token, tenantId, role: isAdmin ? 'SUPERADMIN' : 'OWNER' });
 });
 
+// --- SERVE FRONTEND (Static files from client build) ---
+const path = require('path');
+const clientBuildPath = path.join(__dirname, '..', 'client', 'build');
+const clientDistPath = path.join(__dirname, '..', 'client', 'dist');
+const fs = require('fs');
+const frontendPath = fs.existsSync(clientBuildPath) ? clientBuildPath :
+    fs.existsSync(clientDistPath) ? clientDistPath : null;
+
+if (frontendPath) {
+    app.use(express.static(frontendPath));
+    logger.info(`📦 Frontend served from ${frontendPath}`);
+}
+
 // --- ROUTES ---
-app.get('/', (req, res) => {
+app.get('/api/status', (req, res) => {
     res.json({
         status: 'online',
         version: '2.0.4.16',
@@ -128,6 +141,13 @@ app.get('/api/health', (req, res) => {
         cache: global.responseCache.getStats()
     });
 });
+
+// --- SPA CATCH-ALL (must be AFTER all API routes) ---
+if (frontendPath) {
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(frontendPath, 'index.html'));
+    });
+}
 
 // --- START SERVER ---
 app.listen(PORT, () => {

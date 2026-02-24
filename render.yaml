@@ -5,9 +5,8 @@ services:
     env: node
     region: oregon
     plan: free
-    rootDir: server
-    buildCommand: npm install
-    startCommand: node index.js
+    buildCommand: cd server && npm install && cd ../client && npm install && VITE_RENDER_BACKEND_URL=https://whatsapp-fullstack-gkm6.onrender.com VITE_API_URL=https://whatsapp-fullstack-gkm6.onrender.com npm run build && cd ../server
+    startCommand: cd server && node index.js
     envVars:
       - key: NODE_ENV
         value: production
