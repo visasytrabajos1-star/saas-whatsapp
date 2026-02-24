@@ -40,49 +40,36 @@ export default function Login() {
         setLoading(true);
         setMessage('');
 
-        // --- Fallback: si Supabase no está configurado, usar backend JWT ---
-        if (!supabase) {
-            try {
-                const { data } = await fetchJsonWithApiFallback('/api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
-                });
-
-                if (!data.token) throw new Error('El servidor no devolvió un token');
-
-                localStorage.setItem('alex_io_token', data.token);
-                localStorage.setItem('demo_email', email);
-                console.log('Backend login OK, role:', data.role);
-                navigate('/dashboard');
-            } catch (error) {
-                console.error('Backend Login Error:', error);
-                setMessage(error.message || 'Error al conectar con el servidor');
-            } finally {
-                setLoading(false);
-            }
-            return;
-        }
-
-        // --- Ruta normal: Supabase disponible ---
+        // SIEMPRE usar backend JWT login (más confiable que Supabase en frontend)
+        const BACKEND = 'https://whatsapp-fullstack-gkm6.onrender.com';
         try {
-            if (isSignUp) {
-                const { data, error } = await supabase.auth.signUp({ email, password });
-                if (error) throw error;
-                if (data.session) {
-                    navigate(accountType === 'freemium' ? '/payment-setup' : '/dashboard');
-                } else {
-                    setMessage('Registro creado. Por favor confirma tu email para ingresar.');
-                }
-            } else {
-                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-                if (error) throw error;
-                console.log('Login Exitoso:', data);
-                navigate('/dashboard');
+            const res = await fetch(`${BACKEND}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                let errMsg = `Error del servidor (${res.status})`;
+                try { errMsg = JSON.parse(errText)?.error || errMsg; } catch (_) { }
+                throw new Error(errMsg);
             }
+
+            const data = await res.json();
+            if (!data.token) throw new Error('El servidor no devolvió un token');
+
+            localStorage.setItem('alex_io_token', data.token);
+            localStorage.setItem('demo_email', email);
+            console.log('✅ Login OK, role:', data.role, 'plan:', data.plan || 'N/A');
+            navigate('/dashboard');
         } catch (error) {
-            console.error('Catch Error:', error);
-            setMessage(error.message || 'Error desconocido');
+            console.error('Login Error:', error);
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                setMessage('No se puede conectar al servidor. Reintenta en 30 segundos.');
+            } else {
+                setMessage(error.message || 'Error al conectar con el servidor');
+            }
         } finally {
             setLoading(false);
         }
