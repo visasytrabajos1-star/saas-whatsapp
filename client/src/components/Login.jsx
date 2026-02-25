@@ -62,7 +62,8 @@ export default function Login() {
             localStorage.setItem('alex_io_token', data.token);
             localStorage.setItem('demo_email', email);
             console.log('✅ Login OK, role:', data.role, 'plan:', data.plan || 'N/A');
-            navigate('/dashboard');
+            // Full reload so App.jsx re-reads token from localStorage
+            window.location.href = '/#/dashboard';
         } catch (error) {
             console.error('Login Error:', error);
             if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {

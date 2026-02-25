@@ -35,6 +35,16 @@ function App() {
 
     if (!supabase) {
       console.warn("⚠️ [ALEX IO] Supabase client is NULL or missing config");
+      // Check for backend JWT token in localStorage
+      const backendToken = localStorage.getItem('alex_io_token');
+      if (backendToken) {
+        const demoEmail = localStorage.getItem('demo_email') || 'user@app.com';
+        console.log("🔑 [ALEX IO] Backend JWT found, creating session for:", demoEmail);
+        setSession({
+          user: { id: 'backend-jwt-user', email: demoEmail },
+          access_token: backendToken
+        });
+      }
       setLoading(false);
       return;
     }
