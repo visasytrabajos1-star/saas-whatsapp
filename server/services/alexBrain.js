@@ -132,11 +132,31 @@ async function generateResponse({ message, history = [], botConfig = {} }) {
             const mp3 = await openai.audio.speech.create({
                 model: 'tts-1',
                 voice: 'nova',
-                input: responseText.slice(0, 4000) // Support long messages but cap at limit
+                input: responseText.slice(0, 4000)
             });
             result.audioBuffer = Buffer.from(await mp3.arrayBuffer());
         } catch (err) {
-            console.error('❌ TTS Error:', err.message);
+            console.error('❌ TTS OpenAI Error:', err.message);
+        }
+    }
+
+    // 7b. Free TTS Fallback via Google Translate (if OpenAI not available)
+    if (!result.audioBuffer) {
+        try {
+            const ttsText = responseText.slice(0, 200); // Google TTS limit
+            const encodedText = encodeURIComponent(ttsText);
+            const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=es&client=tw-ob`;
+            const ttsRes = await axios.get(ttsUrl, {
+                responseType: 'arraybuffer',
+                timeout: 10000,
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+            if (ttsRes.data && ttsRes.data.byteLength > 0) {
+                result.audioBuffer = Buffer.from(ttsRes.data);
+            }
+        } catch (err) {
+            // Silent fail — Google TTS is best-effort
+            console.warn('⚠️ TTS Google fallback failed:', err.message);
         }
     }
 

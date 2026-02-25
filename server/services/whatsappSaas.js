@@ -132,6 +132,20 @@ async function handleQRMessage(sock, msg, instanceId) {
             await sock.sendMessage(remoteJid, { text: result.text });
             console.log(`📤 [${config.companyName}] Respondido con ${result.trace.model}`);
         }
+
+        // Send voice note if audio was generated
+        if (result.audioBuffer) {
+            try {
+                await sock.sendMessage(remoteJid, {
+                    audio: result.audioBuffer,
+                    mimetype: 'audio/mpeg',
+                    ptt: true // Send as voice note (push-to-talk style)
+                });
+                console.log(`🔊 [${config.companyName}] Audio enviado`);
+            } catch (audioErr) {
+                console.warn(`⚠️ [${config.companyName}] No se pudo enviar audio:`, audioErr.message);
+            }
+        }
     } catch (err) {
         console.error('❌ Error handling message:', err.message);
     }
