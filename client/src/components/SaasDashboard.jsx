@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, Component } from 'react';
 import { Link } from 'react-router-dom';
-import { Shield, Activity, Settings, Smartphone, Plus, Loader, AlertTriangle, CheckCircle2, X } from 'lucide-react';
+import { Shield, Activity, Settings, Smartphone, Plus, Loader, AlertTriangle, CheckCircle2, X, Wand2 } from 'lucide-react';
+import PromptWizard from './PromptWizard';
 import { fetchJsonWithApiFallback, getLastResolvedApiBase, getPreferredApiBase } from '../api';
 
 const VERSION = 'v2.0.4.16';
@@ -58,6 +59,7 @@ function SaasDashboard() {
   const [logs, setLogs] = useState([]);
   const [loadingInstances, setLoadingInstances] = useState(false);
   const [showNewBotModal, setShowNewBotModal] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [newBotName, setNewBotName] = useState('');
   const [newBotProvider, setNewBotProvider] = useState('baileys');
   const [configDraft, setConfigDraft] = useState({
@@ -385,6 +387,11 @@ function SaasDashboard() {
 
                   <div>
                     <label className="block text-sm text-slate-400 mb-1">Prompt Personalizado (Cerebro AI)</label>
+                    <div className="flex gap-2 mb-1">
+                      <button onClick={() => setShowWizard(true)} className="flex items-center gap-1 text-xs bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 px-3 py-1 rounded-full font-bold transition-all">
+                        <Wand2 size={12} /> Asistente IA
+                      </button>
+                    </div>
                     <textarea className="w-full bg-slate-900 border border-slate-700 rounded p-2 h-32" value={configDraft.customPrompt} onChange={(e) => setConfigDraft((prev) => ({ ...prev, customPrompt: e.target.value }))} />
                   </div>
 
@@ -464,6 +471,14 @@ function SaasDashboard() {
         <span className="text-blue-400 font-bold">{VERSION}</span>
         <span>Hardened | V8 Multi-Tenancy | API: {apiDebugUrl}</span>
       </footer>
+
+      {showWizard && (
+        <PromptWizard
+          onClose={() => setShowWizard(false)}
+          onPromptGenerated={(prompt) => setConfigDraft(prev => ({ ...prev, customPrompt: prompt }))}
+          instanceName={selected?.name || configDraft.name}
+        />
+      )}
     </div>
   );
 }

@@ -410,4 +410,110 @@ router.get('/status/:instanceId', (req, res) => {
     });
 });
 
+// --- GENERATE PROMPT VIA AI ---
+router.post('/generate-prompt', async (req, res) => {
+    const { businessType, objective, tone, formality, emojis, faqs, limits, humanHandoff, businessName, hours, location, socials, extra } = req.body || {};
+
+    if (!businessName && !businessType) {
+        return res.status(400).json({ error: 'Se requiere al menos el nombre del negocio o tipo de negocio.' });
+    }
+
+    // Build context from wizard answers
+    const wizardContext = [];
+    if (businessName) wizardContext.push(`Nombre del negocio: ${businessName}`);
+    if (businessType) wizardContext.push(`Tipo: ${businessType}`);
+    if (objective) wizardContext.push(`Objetivo principal del bot: ${objective}`);
+    if (tone) wizardContext.push(`Tono de comunicación: ${tone}`);
+    if (formality) wizardContext.push(`Formalidad: ${formality}`);
+    if (emojis) wizardContext.push(`Uso de emojis: ${emojis}`);
+    if (hours) wizardContext.push(`Horarios: ${hours}`);
+    if (location) wizardContext.push(`Ubicación: ${location}`);
+    if (socials) wizardContext.push(`Redes/Web: ${socials}`);
+
+    const validFaqs = (faqs || []).filter(f => f.question && f.question.trim());
+    if (validFaqs.length > 0) {
+        wizardContext.push('Preguntas frecuentes de clientes:');
+        validFaqs.forEach(f => wizardContext.push(`- P: "${f.question}" R: "${f.answer || '(sin respuesta aún)'}"`));
+    }
+
+    if (limits && limits.length > 0) {
+        wizardContext.push('Reglas y límites del bot:');
+        limits.forEach(l => wizardContext.push(`- ${l}`));
+    }
+    if (humanHandoff) wizardContext.push(`Derivar a humano cuando: ${humanHandoff}`);
+    if (extra) wizardContext.push(`Info adicional: ${extra}`);
+
+    const metaPrompt = `Eres un experto en diseño de asistentes virtuales para WhatsApp. 
+Un cliente acaba de responder un cuestionario sobre su negocio. 
+Tu tarea es generar un SYSTEM PROMPT optimizado para un chatbot de WhatsApp basándote en sus respuestas.
+
+DATOS DEL CUESTIONARIO:
+${wizardContext.join('\n')}
+
+REGLAS PARA GENERAR EL PROMPT:
+1. El prompt debe estar en español.
+2. Debe ser específico para el tipo de negocio.
+3. Debe incluir instrucciones claras sobre tono, formalidad y uso de emojis.
+4. Debe incorporar las FAQs como conocimiento base.
+5. Debe respetar las reglas y límites definidos.
+6. Debe ser conciso pero completo (máximo 600 palabras).
+7. NO generes nada más que el system prompt. Sin explicaciones, sin markdown, solo el texto del prompt.
+
+Generá el system prompt ahora:`;
+
+    try {
+        const result = await alexBrain.generateResponse({
+            message: metaPrompt,
+            history: [],
+            botConfig: {
+                bot_name: 'PromptGenerator',
+                system_prompt: 'Eres un generador de prompts para chatbots. Solo respondés con el prompt generado, sin explicaciones adicionales.'
+            }
+        });
+
+        if (result.text && result.text.length > 50) {
+            return res.json({
+                success: true,
+                prompt: result.text,
+                model_used: result.trace?.model || 'unknown'
+            });
+        }
+        throw new Error('Respuesta del modelo demasiado corta');
+    } catch (err) {
+        console.warn('⚠️ AI prompt generation failed, using template:', err.message);
+
+        // Fallback: deterministic template
+        const lines = [];
+        lines.push(`Eres el asistente virtual de "${businessName || 'nuestro negocio'}".`);
+        if (businessType) lines.push(`Tipo de negocio: ${businessType}.`);
+        if (objective) lines.push(`Tu objetivo principal es: ${objective.toLowerCase()}.`);
+        if (tone) lines.push(`Tu tono es ${tone.toLowerCase()}.`);
+        if (formality === 'Usted') lines.push('Siempre tratá al cliente de usted.');
+        else lines.push('Podés tutear al cliente.');
+        if (emojis?.includes('No')) lines.push('No uses emojis.');
+        else if (emojis?.includes('muchos')) lines.push('Usá emojis frecuentemente.');
+        else lines.push('Usá emojis con moderación.');
+        if (hours) lines.push(`Horarios: ${hours}.`);
+        if (location) lines.push(`Ubicación: ${location}.`);
+        if (socials) lines.push(`Redes/Web: ${socials}.`);
+        if (validFaqs.length > 0) {
+            lines.push('\nPreguntas frecuentes:');
+            validFaqs.forEach(f => lines.push(`- "${f.question}" → "${f.answer}"`));
+        }
+        if (limits?.length > 0) {
+            lines.push('\nReglas:');
+            limits.forEach(l => lines.push(`- ${l}`));
+        }
+        if (humanHandoff) lines.push(`\nDerivar a humano: ${humanHandoff}`);
+        if (extra) lines.push(`\nInfo adicional: ${extra}`);
+        lines.push('\nSiempre sé útil, conciso y amable.');
+
+        return res.json({
+            success: true,
+            prompt: lines.join('\n'),
+            model_used: 'template-fallback'
+        });
+    }
+});
+
 module.exports = router;
