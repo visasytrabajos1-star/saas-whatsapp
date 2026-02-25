@@ -35,7 +35,12 @@ const AdminDashboard = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (user) fetchConfigs();
+        if (user) {
+            fetchConfigs();
+        } else {
+            // No user yet — stop loading so we don't hang forever
+            setLoading(false);
+        }
     }, [user]);
 
     const fetchConfigs = async () => {
@@ -94,7 +99,14 @@ const AdminDashboard = () => {
         }
     };
 
-    if (loading) return <div className="p-8 text-center text-slate-400">Iniciando Cerebro ALEX IO...</div>;
+    if (loading) return (
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+            <div className="text-center">
+                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-slate-400">Iniciando Cerebro ALEX IO...</p>
+            </div>
+        </div>
+    );
 
     return (
         <div className="flex h-screen bg-slate-900 text-slate-100 font-sans">
