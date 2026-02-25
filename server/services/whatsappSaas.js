@@ -138,7 +138,7 @@ async function handleQRMessage(sock, msg, instanceId) {
             try {
                 await sock.sendMessage(remoteJid, {
                     audio: result.audioBuffer,
-                    mimetype: 'audio/mpeg',
+                    mimetype: result.audioMime || 'audio/ogg; codecs=opus',
                     ptt: true // Send as voice note (push-to-talk style)
                 });
                 console.log(`🔊 [${config.companyName}] Audio enviado`);
