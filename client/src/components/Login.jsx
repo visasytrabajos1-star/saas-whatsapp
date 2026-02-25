@@ -5,6 +5,7 @@ import { Loader2, ArrowLeft, Globe, Mail } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function Login() {
+    const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -54,7 +55,7 @@ export default function Login() {
                     email,
                     password,
                     options: {
-                        emailRedirectTo: window.location.origin + '/#/dashboard'
+                        emailRedirectTo: window.location.origin + '/#/login'
                     }
                 });
                 if (error) throw error;
@@ -67,13 +68,13 @@ export default function Login() {
                 const { data, error } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) throw error;
 
-                // Guardar también en localStorage para compatibilidad con el backend JWT
-                const session = data.session;
-                localStorage.setItem('alex_io_token', session.access_token);
-                localStorage.setItem('demo_email', email);
+                // Guardar token en localStorage para el backend
+                localStorage.setItem('alex_io_token', data.session.access_token);
+                localStorage.setItem('demo_email', data.user.email);
+                localStorage.setItem('alex_io_role', 'OWNER');
 
-                // Redirigir al dashboard
-                window.location.href = '/#/dashboard';
+                // Navegar sin recargar la página (mantiene la sesión de Supabase en memoria)
+                navigate('/dashboard');
             }
         } catch (error) {
             console.error('Auth Error:', error);
@@ -204,8 +205,8 @@ export default function Login() {
 
                     {message && (
                         <div className={`p-4 rounded-xl text-sm flex items-start gap-2 ${messageType === 'success'
-                                ? 'bg-green-500/10 text-green-400 border border-green-500/20'
-                                : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                            ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                            : 'bg-red-500/10 text-red-400 border border-red-500/20'
                             }`}>
                             {messageType === 'success' ? <Mail size={16} className="mt-0.5 shrink-0" /> : null}
                             <span>{message}</span>
