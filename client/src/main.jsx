@@ -1,7 +1,35 @@
-import { StrictMode } from 'react'
+import { StrictMode, Component } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+
+class GlobalErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("Global Error Boundary caught an error:", error, errorInfo);
+    this.setState({ errorInfo });
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ backgroundColor: '#580000', color: '#ffaaaa', padding: '20px', minHeight: '100vh', fontFamily: 'monospace' }}>
+          <h2>💥 ALEX IO FATAL REACT ERROR</h2>
+          <p><strong>{this.state.error && this.state.error.toString()}</strong></p>
+          <pre style={{ backgroundColor: '#2b0000', padding: '10px', overflowX: 'auto' }}>
+            {this.state.errorInfo && this.state.errorInfo.componentStack}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 console.log("🚀 [ALEX IO] System Boot: main.jsx initiated");
 
@@ -13,7 +41,9 @@ try {
   } else {
     createRoot(rootElement).render(
       <StrictMode>
-        <App />
+        <GlobalErrorBoundary>
+          <App />
+        </GlobalErrorBoundary>
       </StrictMode>
     );
     console.log("✅ [ALEX IO] Virtual DOM Mount requested");

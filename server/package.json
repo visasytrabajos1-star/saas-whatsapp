@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
-    "@supabase/supabase-js": "^2.39.0",
+    "@supabase/supabase-js": "^2.97.0",
     "@whiskeysockets/baileys": "latest",
     "axios": "^1.6.5",
     "bcryptjs": "^2.4.3",
