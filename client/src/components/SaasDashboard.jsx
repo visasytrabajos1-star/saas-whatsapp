@@ -137,6 +137,15 @@ function SaasDashboard() {
     return found?.label || 'Baileys (QR)';
   }, [selected]);
 
+  const sortPromptVersions = (versions = []) => {
+    const ranking = { active: 0, test: 1, archived: 2 };
+    return [...versions].sort((a, b) => {
+      const byStatus = (ranking[a.status] ?? 9) - (ranking[b.status] ?? 9);
+      if (byStatus !== 0) return byStatus;
+      return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+    });
+  };
+
   const waitForQr = (instanceId) => new Promise((resolve, reject) => {
     const timeoutMs = 120000;
     const startedAt = Date.now();
@@ -271,7 +280,7 @@ function SaasDashboard() {
         timeoutMs: 20000,
         headers: { ...getAuthHeaders() }
       });
-      setPromptVersions(data.versions || []);
+      setPromptVersions(sortPromptVersions(data.versions || []));
     } catch (error) {
       console.warn('No se pudieron cargar versiones del prompt:', error.message);
       setPromptVersions([]);
@@ -292,13 +301,14 @@ function SaasDashboard() {
 
       const activePrompt = data.version?.prompt_text || version.prompt_text;
       if (activePrompt) {
-        setConfigDraft((prev) => ({ ...prev, customPrompt: activePrompt }));
+        const nextDraft = { ...configDraft, customPrompt: activePrompt };
+        setConfigDraft(nextDraft);
 
         await fetchJsonWithApiFallback(`/api/saas/config/${selected.instanceId}`, {
           timeoutMs: 30000,
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify({ ...configDraft, customPrompt: activePrompt })
+          body: JSON.stringify(nextDraft)
         });
       }
 

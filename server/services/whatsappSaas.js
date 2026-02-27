@@ -21,6 +21,7 @@ const sessionsTable = process.env.WHATSAPP_SESSIONS_TABLE || 'whatsapp_sessions'
 const maxReconnectAttempts = Number(process.env.WHATSAPP_MAX_RECONNECT_ATTEMPTS || 5);
 const promptVersionsTable = process.env.PROMPT_VERSIONS_TABLE || 'prompt_versiones';
 const promptVersionsMemoryStore = new Map();
+const allowedPromptStatuses = new Set(['test', 'active', 'archived']);
 
 if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -99,13 +100,14 @@ const safeDeletePersistentSession = async (instanceId) => {
 
 
 const savePromptVersion = async ({ tenantId, instanceId, promptText, superPromptJson, status = 'test' }) => {
+    const normalizedStatus = allowedPromptStatuses.has(status) ? status : 'test';
     const now = new Date().toISOString();
     const versionRecord = {
         id: randomUUID(),
         tenant_id: tenantId,
         instance_id: instanceId,
         version: superPromptJson?.version || 'v1',
-        status,
+        status: normalizedStatus,
         prompt_text: promptText,
         super_prompt_json: superPromptJson || null,
         created_at: now,
@@ -142,7 +144,11 @@ const listPromptVersions = async ({ tenantId, instanceId, limit = 20 }) => {
 
     if (!isSupabaseEnabled) {
         const key = `${tenantId}:${instanceId}`;
-        return (promptVersionsMemoryStore.get(key) || []).slice(0, limit);
+        const ranking = { active: 0, test: 1, archived: 2 };
+        return (promptVersionsMemoryStore.get(key) || [])
+            .slice()
+            .sort((a, b) => (ranking[a.status] ?? 9) - (ranking[b.status] ?? 9) || String(b.created_at).localeCompare(String(a.created_at)))
+            .slice(0, limit);
     }
 
     const { data, error } = await supabase
@@ -150,7 +156,8 @@ const listPromptVersions = async ({ tenantId, instanceId, limit = 20 }) => {
         .select('*')
         .eq('tenant_id', tenantId)
         .eq('instance_id', instanceId)
-        .order('created_at', { ascending: false })
+        .order('status', { ascending: true })
+        .order('updated_at', { ascending: false })
         .limit(limit);
 
     if (error) throw new Error(`No se pudo listar versiones: ${error.message}`);
@@ -790,6 +797,10 @@ router.post('/prompt-versions', async (req, res) => {
 
         if (!instanceId || !prompt) {
             return res.status(400).json({ error: 'instanceId y prompt son requeridos' });
+        }
+
+        if (status && !allowedPromptStatuses.has(status)) {
+            return res.status(400).json({ error: 'status inválido. Permitidos: test, active, archived' });
         }
 
         const saved = await savePromptVersion({
