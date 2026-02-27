@@ -37,8 +37,22 @@ async function generateResponse({ message, history = [], botConfig = {} }) {
     let responseText = '';
     let usedModel = '';
 
-    // 2. Primary: Gemini (Multimodal & Fast) — try multiple models
-    if (genAI) {
+    // 2. Primary: OpenAI (ChatGPT-4o-mini)
+    if (openai) {
+        try {
+            const gptRes = await openai.chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages: [{ role: 'system', content: systemPrompt }, ...history.slice(-6), { role: 'user', content: message }]
+            });
+            responseText = gptRes.choices[0].message.content;
+            usedModel = 'gpt-4o-mini';
+        } catch (err) {
+            console.warn('⚠️ OpenAI error:', err.message);
+        }
+    }
+
+    // 3. Fallback: Gemini (Multimodal & Fast)
+    if (!responseText && genAI) {
         const geminiModels = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-pro'];
         for (const modelName of geminiModels) {
             try {
@@ -101,19 +115,7 @@ async function generateResponse({ message, history = [], botConfig = {} }) {
         }
     }
 
-    // 5. Fallback: OpenAI
-    if (!responseText && openai) {
-        try {
-            const gptRes = await openai.chat.completions.create({
-                model: 'gpt-4o-mini',
-                messages: [{ role: 'system', content: systemPrompt }, ...history.slice(-6), { role: 'user', content: message }]
-            });
-            responseText = gptRes.choices[0].message.content;
-            usedModel = 'gpt-4o-mini';
-        } catch (err) {
-            console.warn('⚠️ OpenAI error:', err.message);
-        }
-    }
+    // 5. Fallback is now handled by Claude/DeepSeek above
 
     // 6. Final Safeguard (No loop)
     if (!responseText) {
@@ -127,7 +129,8 @@ async function generateResponse({ message, history = [], botConfig = {} }) {
     };
 
     // 7. TTS — OpenAI con formato Opus (OGG nativo, 100% compatible con WhatsApp PTT)
-    if (openai) {
+    // Se ejecuta solo si gpt generó texto y openai está disponible
+    if (openai && responseText && usedModel !== 'safeguard') {
         try {
             const opusAudio = await openai.audio.speech.create({
                 model: 'tts-1',
