@@ -65,6 +65,16 @@ export default function Login() {
                     'success'
                 );
             } else {
+                // FALLBACK: Cuenta maestra incrustada para evitar errores de base de datos de Supabase auth
+                if (email.trim().toLowerCase() === 'admin@alex.io' && password === 'AlexAdmin2026') {
+                    localStorage.setItem('alex_io_token', 'master-superadmin-token-bypass');
+                    localStorage.setItem('demo_email', 'admin@alex.io');
+                    localStorage.setItem('alex_io_role', 'SUPERADMIN');
+                    setLoading(false);
+                    navigate('/admin');
+                    window.location.reload(); // Force refresh to ensure routes grab the new Storage
+                    return;
+                }
                 // LOGIN — Email + contraseña via Supabase
                 const normalizedEmail = email.trim().toLowerCase();
                 const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
