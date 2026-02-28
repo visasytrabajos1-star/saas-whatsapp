@@ -29,6 +29,10 @@ if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
 const updateSessionStatus = async (instanceId, status, extra = {}) => {
     const payload = {
         instance_id: instanceId,
+        session_id: instanceId, // SATISFIES NOT NULL CONSTRAINT
+        key_type: 'metadata',   // SATISFIES NOT NULL CONSTRAINT
+        key_id: 'status',       // SATISFIES NOT NULL CONSTRAINT
+        value: '{}',            // SATISFIES NOT NULL CONSTRAINT
         status,
         qr_code: extra.qr_code ?? null,
         company_name: extra.companyName ?? null,
