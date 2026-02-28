@@ -1,7 +1,6 @@
 services:
   - type: web
     name: whatsapp-fullstack
-    version: 2.0.4
     env: node
     region: oregon
     plan: free
