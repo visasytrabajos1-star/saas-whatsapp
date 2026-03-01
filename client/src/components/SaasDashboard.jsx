@@ -76,7 +76,8 @@ function SaasDashboard() {
     metaApiUrl: '',
     metaPhoneNumberId: '',
     metaAccessToken: '',
-    dialogApiKey: ''
+    dialogApiKey: '',
+    hubspotAccessToken: ''
   });
 
   useEffect(() => {
@@ -141,7 +142,8 @@ function SaasDashboard() {
       metaApiUrl: selected.metaApiUrl || '',
       metaPhoneNumberId: selected.metaPhoneNumberId || '',
       metaAccessToken: selected.metaAccessToken || '',
-      dialogApiKey: selected.dialogApiKey || ''
+      dialogApiKey: selected.dialogApiKey || '',
+      hubspotAccessToken: selected.hubspotAccessToken || ''
     });
   }, [selected]);
 
@@ -268,7 +270,8 @@ function SaasDashboard() {
         metaApiUrl: '',
         metaPhoneNumberId: '',
         metaAccessToken: '',
-        dialogApiKey: ''
+        dialogApiKey: '',
+        hubspotAccessToken: ''
       };
 
       if (provider !== 'baileys') {
@@ -647,7 +650,23 @@ function SaasDashboard() {
                     </div>
                   )}
 
-                  <button onClick={handleSaveConfig} disabled={savingConfig} className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded font-bold disabled:opacity-50 transition-colors">
+                  <div className="mt-6 pt-4 border-t border-slate-700">
+                    <h3 className="text-md font-bold text-slate-300 mb-3 flex items-center gap-2">🔗 Integraciones CRM</h3>
+                    <div className="bg-slate-900 border border-orange-500/30 rounded p-4">
+                      <h4 className="text-sm font-bold text-orange-400 mb-2">HubSpot CRM</h4>
+                      <label className="block text-xs text-slate-400 mb-1">Private App Token (API Key)</label>
+                      <input
+                        className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm"
+                        type="password"
+                        placeholder="pat-na1-..."
+                        value={configDraft.hubspotAccessToken || ''}
+                        onChange={(e) => setConfigDraft((prev) => ({ ...prev, hubspotAccessToken: e.target.value }))}
+                      />
+                      <p className="text-[10px] text-slate-500 mt-2 leading-tight">La IA leerá las conversaciones en tiempo real y enviará los prospectos a tu cuenta de HubSpot calificándolos como Fríos, Tibios o Calientes.</p>
+                    </div>
+                  </div>
+
+                  <button onClick={handleSaveConfig} disabled={savingConfig} className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded font-bold disabled:opacity-50 transition-colors mt-4">
                     <span>{savingConfig ? 'Guardando...' : 'Guardar Configuración'}</span>
                   </button>
                 </div>

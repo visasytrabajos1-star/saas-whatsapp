@@ -9,6 +9,7 @@ const express = require('express');
 const router = express.Router();
 const alexBrain = require('./alexBrain');
 const { supabase, isSupabaseEnabled } = require('./supabaseClient');
+const hubspotService = require('./hubspotService');
 const {
     savePromptVersion,
     listPromptVersions,
@@ -22,6 +23,7 @@ const activeSessions = new Map();
 const clientConfigs = new Map();
 const sessionStatus = new Map();
 const reconnectAttempts = new Map();
+const conversationMemory = new Map(); // key: instanceId_remoteJid
 const sessionsDir = './sessions';
 const sessionsTable = process.env.WHATSAPP_SESSIONS_TABLE || 'whatsapp_sessions';
 const usageTable = 'tenant_usage_metrics';
@@ -176,14 +178,41 @@ async function handleQRMessage(sock, msg, instanceId) {
             }
         }
 
+        const memKey = `${instanceId}_${remoteJid}`;
+        let history = conversationMemory.get(memKey) || [];
+
+        history.push({ role: 'user', content: text });
+        if (history.length > 20) history = history.slice(-20); // Keep last 20 messages max
+
         const result = await alexBrain.generateResponse({
             message: text,
-            history: [],
+            history: history,
             botConfig: {
                 bot_name: config.companyName,
-                system_prompt: config.customPrompt || 'Eres ALEX IO, asistente virtual inteligente.'
+                system_prompt: config.customPrompt || 'Eres ALEX IO, asistente virtual inteligente.',
+                voice: config.voice
             }
         });
+
+        // Save AI response to memory
+        if (result.text) {
+            history.push({ role: 'assistant', content: result.text });
+            conversationMemory.set(memKey, history);
+        }
+
+        // --- Lead Extraction Trigger (Background) ---
+        const lowerText = text.toLowerCase();
+        const isTrigger = lowerText.match(/(comprar|precio|costo|agendar|cita|quiero|info|contacto|hablar|humano)/) || (history.filter(h => h.role === 'user').length % 4 === 0);
+
+        if (isTrigger && config.hubspotAccessToken) {
+            alexBrain.extractLeadInfo({ history, systemPrompt: config.customPrompt })
+                .then(lead => {
+                    if (lead && lead.isLead) {
+                        const phoneStr = remoteJid.split('@')[0];
+                        hubspotService.syncContact(phoneStr, lead, config.hubspotAccessToken);
+                    }
+                }).catch(err => console.error(`⚠️ [HubSpot Sync Error] ${config.companyName}:`, err.message));
+        }
 
         console.log(`🤖 [${config.companyName}] AI Result:`, !!result.text, 'Audio:', !!result.audioBuffer);
 
@@ -372,7 +401,7 @@ async function connectToWhatsApp(instanceId, config, res = null) {
 
 // --- ENDPOINTS ---
 router.post('/connect', async (req, res) => {
-    const { companyName, customPrompt, voice, provider = 'baileys', metaApiUrl, metaPhoneNumberId, metaAccessToken, dialogApiKey } = req.body || {};
+    const { companyName, customPrompt, voice, hubspotAccessToken, provider = 'baileys', metaApiUrl, metaPhoneNumberId, metaAccessToken, dialogApiKey } = req.body || {};
     const cleanName = String(companyName || '').trim();
 
     if (!cleanName) {
@@ -385,6 +414,7 @@ router.post('/connect', async (req, res) => {
         companyName: cleanName,
         customPrompt,
         voice: voice || 'nova',
+        hubspotAccessToken: hubspotAccessToken || '',
         provider,
         tenantId,
         ownerEmail: req.tenant?.email || '',

@@ -184,4 +184,55 @@ async function generateResponse({ message, history = [], botConfig = {} }) {
     return result;
 }
 
-module.exports = { generateResponse };
+/**
+ * Función en segundo plano para analizar si la conversación actual forma a un prospecto (Lead)
+ * y extraer su temperatura y datos para el CRM.
+ */
+async function extractLeadInfo({ history = [], systemPrompt }) {
+    if (!GEMINI_KEY || history.length < 2) return null;
+
+    try {
+        console.log(`🤖 [LeadExtractor] Analizando conversación de ${history.length} mensajes...`);
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
+
+        const contents = [];
+        // Analizar últimos 8 mensajes para contexto
+        history.slice(-8).forEach(h => {
+            contents.push({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.content || h.text || "" }] });
+        });
+
+        const analysisPrompt = `
+Analiza la conversación anterior. 
+El System Prompt del Bot actuante era: "${systemPrompt || ''}"
+
+Extrae la información del usuario en un objeto JSON estricto con esta estructura EXACTA (sin markdown adicional):
+{
+    "isLead": boolean (true si el usuario mostró interés, pidió info, precios, agendar, o dio sus datos),
+    "name": string (nombre del usuario si lo dio, o "desconocido"),
+    "email": string (correo si lo dio, o null),
+    "temperature": string ("COLD" si solo saluda/curiosea, "WARM" si pregunta detalles/precios, "HOT" si quiere comprar/agendar o da sus datos),
+    "summary": string (resumen de 1-2 líneas de lo que quiere el usuario o de la interacción)
+}
+`;
+        contents.push({ role: 'user', parts: [{ text: analysisPrompt }] });
+
+        const payload = {
+            contents,
+            generationConfig: {
+                temperature: 0.1,
+                responseMimeType: "application/json"
+            }
+        };
+
+        const res = await axios.post(url, payload, { timeout: 8000 });
+        if (res.data.candidates?.[0]?.content?.parts?.[0]?.text) {
+            const parsed = JSON.parse(res.data.candidates[0].content.parts[0].text);
+            return parsed;
+        }
+    } catch (err) {
+        console.warn(`⚠️ [LeadExtractor] Falló la extracción:`, err.response?.data?.error?.message || err.message);
+    }
+    return null;
+}
+
+module.exports = { generateResponse, extractLeadInfo };
