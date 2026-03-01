@@ -599,6 +599,29 @@ router.post('/config/:instanceId', async (req, res) => {
     return res.json({ success: true, instance_id: instanceId, config: nextConfig });
 });
 
+// --- SOPORTE INTEGARDON AI ---
+router.post('/support-chat', async (req, res) => {
+    try {
+        const { message, history } = req.body;
+
+        const systemPrompt = `Eres Alex Support, el asistente virtual interno para los dueños de negocios que usan la plataforma ALEX IO SaaS. Tu objetivo es resolver sus dudas sobre cómo conectar el código QR, cómo usar integraciones de CRM (HubSpot, Copper), cómo redactar buenos prompts, y cómo funcionan los límites del plan. Responde de forma breve, profesional, amigable y al grano. Mantén un tono de servicio impecable. Si preguntan por precios, redirígelos al equipo de ventas o a la sección de billing.`;
+
+        const result = await alexBrain.generateResponse({
+            message,
+            history: history || [],
+            botConfig: {
+                system_prompt: systemPrompt,
+                bot_name: 'Alex Support'
+            }
+        });
+
+        res.json({ success: true, text: result.text });
+    } catch (err) {
+        console.error('❌ Support Chat Error:', err);
+        res.status(500).json({ error: 'Error en el servicio de soporte integrado' });
+    }
+});
+
 router.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];

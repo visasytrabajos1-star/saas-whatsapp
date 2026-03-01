@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, Component } from 'react';
 import { Link } from 'react-router-dom';
-import { Shield, Activity, Settings, Smartphone, Plus, Loader, AlertTriangle, CheckCircle2, X, Wand2, LogOut } from 'lucide-react';
+import { Shield, Activity, Settings, Smartphone, Plus, Loader, AlertTriangle, CheckCircle2, X, Wand2, LogOut, MessageCircle, Send } from 'lucide-react';
 import PromptWizard from './PromptWizard';
 import { fetchJsonWithApiFallback, getLastResolvedApiBase, getPreferredApiBase, getAuthHeaders } from '../api';
 
@@ -70,6 +70,13 @@ function SaasDashboard() {
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [newBotName, setNewBotName] = useState('');
   const [newBotProvider, setNewBotProvider] = useState('baileys');
+
+  // Soporte AI Chat
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
+  const [supportMessages, setSupportMessages] = useState([{ role: 'assistant', content: '¡Hola! Soy Alex Support. ¿En qué te puedo ayudar sobre la plataforma ALEX IO?' }]);
+  const [supportInput, setSupportInput] = useState('');
+  const [isSupportTyping, setIsSupportTyping] = useState(false);
+
   const [configDraft, setConfigDraft] = useState({
     name: '',
     provider: 'baileys',
@@ -113,6 +120,35 @@ function SaasDashboard() {
       console.error("Error fetching analytics:", e);
     } finally {
       setLoadingAnalytics(false);
+    }
+  };
+
+  const handleSendSupportMessage = async (e) => {
+    e.preventDefault();
+    if (!supportInput.trim() || isSupportTyping) return;
+
+    const currentInput = supportInput.trim();
+    const newMessages = [...supportMessages, { role: 'user', content: currentInput }];
+    setSupportMessages(newMessages);
+    setSupportInput('');
+    setIsSupportTyping(true);
+
+    try {
+      const { response, data } = await fetchJsonWithApiFallback('/api/saas/support-chat', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: currentInput, history: supportMessages })
+      });
+
+      if (response.ok && data.success) {
+        setSupportMessages([...newMessages, { role: 'assistant', content: data.text }]);
+      } else {
+        setSupportMessages([...newMessages, { role: 'assistant', content: 'Lo siento, hubo un error técnico. Reintenta.' }]);
+      }
+    } catch (err) {
+      setSupportMessages([...newMessages, { role: 'assistant', content: 'Fallo de red.' }]);
+    } finally {
+      setIsSupportTyping(false);
     }
   };
 
@@ -861,6 +897,65 @@ function SaasDashboard() {
           instanceName={selected?.name || configDraft.name}
         />
       )}
+
+      {/* Floating AI Support Chat */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+        {isSupportOpen && (
+          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl mb-4 w-80 h-96 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5">
+            <div className="bg-blue-600 p-3 text-white flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Wand2 size={16} />
+                <span className="font-bold text-sm">Alex Support</span>
+              </div>
+              <button onClick={() => setIsSupportOpen(false)} className="hover:text-blue-200 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-950/50">
+              {supportMessages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[85%] rounded-lg p-2 text-sm ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 border border-slate-700 text-slate-200 rounded-bl-none'}`}>
+                    {msg.content}
+                  </div>
+                </div>
+              ))}
+              {isSupportTyping && (
+                <div className="flex justify-start">
+                  <div className="bg-slate-800 border border-slate-700 text-slate-400 rounded-lg rounded-bl-none p-2 text-xs flex gap-1 items-center">
+                    <span className="animate-bounce">●</span>
+                    <span className="animate-bounce delay-75">●</span>
+                    <span className="animate-bounce delay-150">●</span>
+                  </div>
+                </div>
+              )}
+            </div>
+            <form onSubmit={handleSendSupportMessage} className="p-2 border-t border-slate-800 bg-slate-900 flex gap-2">
+              <input
+                type="text"
+                value={supportInput}
+                onChange={e => setSupportInput(e.target.value)}
+                placeholder="Escribe tu duda..."
+                className="flex-1 bg-slate-950 border border-slate-700 rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+              />
+              <button
+                type="submit"
+                disabled={!supportInput.trim() || isSupportTyping}
+                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-full p-2 transition-colors flex items-center justify-center"
+              >
+                <Send size={16} className="-ml-0.5" />
+              </button>
+            </form>
+          </div>
+        )}
+
+        <button
+          onClick={() => setIsSupportOpen(!isSupportOpen)}
+          className={`bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-lg shadow-blue-500/20 transition-all ${isSupportOpen ? 'rotate-90 scale-90 opacity-0' : 'rotate-0 scale-100 opacity-100'}`}
+        >
+          <MessageCircle size={24} />
+        </button>
+      </div>
+
     </div>
   );
 }
