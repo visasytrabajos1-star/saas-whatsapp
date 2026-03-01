@@ -170,7 +170,9 @@ async function handleQRMessage(sock, msg, instanceId) {
             direction: 'INBOUND',
             message_type: 'text',
             content: text
-        }).catch(err => console.warn(`⚠️ [${instanceId}] Error logging inbound message:`, err.message));
+        }).then(({ error }) => {
+            if (error) console.warn(`⚠️ [${instanceId}] Error logging inbound message:`, error.message);
+        });
     }
 
     try {
@@ -273,7 +275,7 @@ async function handleQRMessage(sock, msg, instanceId) {
                     direction: 'OUTBOUND',
                     message_type: 'text',
                     content: result.text
-                }).catch(() => null);
+                }).then(() => null);
 
                 // Increment Usage
                 const tokenUsage = result.trace?.usage?.totalTokens || 150;
@@ -288,7 +290,7 @@ async function handleQRMessage(sock, msg, instanceId) {
                             tokens_consumed: (usage.tokens_consumed || 0) + tokenUsage,
                             plan_limit: usage.plan_limit,
                             updated_at: new Date().toISOString()
-                        }).catch(() => { });
+                        }).then(() => { });
                     }
                 });
             }
@@ -315,7 +317,7 @@ async function handleQRMessage(sock, msg, instanceId) {
                         direction: 'OUTBOUND',
                         message_type: 'audio',
                         content: '[Nota de Voz generada por IA]'
-                    }).catch(() => null);
+                    }).then(() => null);
                 }
             } catch (audioErr) {
                 console.warn(`⚠️ [${config.companyName}] No se pudo enviar audio:`, audioErr.message);
