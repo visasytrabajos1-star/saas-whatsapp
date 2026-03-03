@@ -38,6 +38,56 @@ const sessionsTable = process.env.WHATSAPP_SESSIONS_TABLE || 'whatsapp_sessions'
 const usageTable = 'tenant_usage_metrics';
 const maxReconnectAttempts = Number(process.env.WHATSAPP_MAX_RECONNECT_ATTEMPTS || 5);
 
+// --- EVENT LOG SYSTEM (ring buffer per bot, max 100 events) ---
+const botEventLogs = new Map(); // key: instanceId, value: Array<{timestamp, level, message, meta}>
+const botAiUsage = new Map();   // key: instanceId, value: { gemini: {count, tokens}, openai: {count, tokens}, deepseek: {count, tokens} }
+const BOT_LOG_MAX = 100;
+
+const logBotEvent = (instanceId, level, message, meta = {}) => {
+    if (!instanceId) return;
+    if (!botEventLogs.has(instanceId)) botEventLogs.set(instanceId, []);
+    const logs = botEventLogs.get(instanceId);
+    logs.push({ timestamp: new Date().toISOString(), level, message, meta });
+    if (logs.length > BOT_LOG_MAX) logs.shift(); // ring buffer
+};
+
+const trackAiUsage = (instanceId, model, tokens = 0) => {
+    if (!instanceId) return;
+    if (!botAiUsage.has(instanceId)) {
+        botAiUsage.set(instanceId, {
+            gemini: { count: 0, tokens: 0 },
+            openai: { count: 0, tokens: 0 },
+            deepseek: { count: 0, tokens: 0 },
+            total_messages: 0
+        });
+    }
+    const usage = botAiUsage.get(instanceId);
+    const provider = model.includes('gemini') ? 'gemini' : model.includes('gpt') || model.includes('openai') ? 'openai' : model.includes('deepseek') ? 'deepseek' : 'gemini';
+    usage[provider].count++;
+    usage[provider].tokens += tokens;
+    usage.total_messages++;
+};
+
+const getBotHealthScore = (instanceId) => {
+    const logs = botEventLogs.get(instanceId) || [];
+    const status = sessionStatus.get(instanceId);
+    const reconnects = reconnectAttempts.get(instanceId) || 0;
+
+    let score = 100;
+    // Deduct for errors in last 50 events
+    const recentLogs = logs.slice(-50);
+    const errorCount = recentLogs.filter(l => l.level === 'error').length;
+    const warnCount = recentLogs.filter(l => l.level === 'warn').length;
+    score -= errorCount * 5;
+    score -= warnCount * 2;
+    // Deduct for disconnected status
+    if (status?.status !== 'online') score -= 20;
+    // Deduct for reconnection attempts
+    score -= reconnects * 10;
+
+    return Math.max(0, Math.min(100, score));
+};
+
 if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
 
 const updateSessionStatus = async (instanceId, status, extra = {}) => {
@@ -376,6 +426,8 @@ async function handleQRMessage(sock, msg, instanceId) {
         }
 
         console.log(`🤖 [${config.companyName}] AI Result:`, !!result.text, 'Audio:', !!result.audioBuffer);
+        logBotEvent(instanceId, 'info', `Respuesta IA generada (${result.trace?.model || 'unknown'})`, { model: result.trace?.model, hasAudio: !!result.audioBuffer });
+        if (result.trace?.model) trackAiUsage(instanceId, result.trace.model, result.trace?.tokens || 0);
 
         if (result.text) {
             console.log(`🧠 [${config.companyName}] Texto generado:`, result.text.substring(0, 100));
@@ -552,9 +604,11 @@ async function connectToWhatsApp(instanceId, config, res = null) {
             reconnectAttempts.set(instanceId, attempts);
 
             console.log(`⚠️ [${instanceId}] Connection closed (code: ${closeCode ?? 'unknown'}). Fatal: ${isFatal}. Reconnect: ${shouldReconnect ? 'yes' : 'NO'} (attempt ${attempts}/${maxReconnectAttempts})`);
+            logBotEvent(instanceId, 'warn', `Conexión cerrada (code: ${closeCode ?? 'unknown'})`, { closeCode, fatal: isFatal, attempt: attempts });
 
             if (isFatal) {
                 console.error(`🛑 [${instanceId}] FATAL error ${closeCode} — stopping reconnection. Clearing auth state.`);
+                logBotEvent(instanceId, 'error', `Error FATAL (code: ${closeCode}) — reconexión detenida`, { closeCode });
                 // Clear corrupted auth state so next connect gets a fresh QR
                 if (clearState) clearState().catch(() => null);
 
@@ -577,6 +631,7 @@ async function connectToWhatsApp(instanceId, config, res = null) {
                 // Exponential backoff: 5s, 10s, 20s, 40s, 60s max
                 const delay = Math.min(5000 * Math.pow(2, attempts - 1), 60000);
                 console.log(`🔁 [${instanceId}] Reconnecting in ${delay / 1000}s...`);
+                logBotEvent(instanceId, 'info', `Reconectando en ${delay / 1000}s (intento ${attempts}/${maxReconnectAttempts})`, { delay, attempt: attempts });
                 setTimeout(() => connectToWhatsApp(instanceId, config, null), delay);
             } else {
                 updateSessionStatus(instanceId, 'failed_max_retries', {
@@ -596,6 +651,7 @@ async function connectToWhatsApp(instanceId, config, res = null) {
             }
         } else if (connection === 'open') {
             reconnectAttempts.set(instanceId, 0);
+            logBotEvent(instanceId, 'info', '✅ Bot conectado exitosamente', { companyName: config.companyName });
             updateSessionStatus(instanceId, 'online', {
                 companyName: config.companyName,
                 qr_code: null
@@ -1153,7 +1209,14 @@ router.get('/superadmin/clients', async (req, res) => {
                 plan: u.plan,
                 role: u.role,
                 usage: userUsage,
-                bots: userBots
+                bots: userBots.map(b => ({
+                    ...b,
+                    health_score: getBotHealthScore(b.instance_id),
+                    reconnect_attempts: reconnectAttempts.get(b.instance_id) || 0,
+                    ai_usage: botAiUsage.get(b.instance_id) || { gemini: { count: 0, tokens: 0 }, openai: { count: 0, tokens: 0 }, deepseek: { count: 0, tokens: 0 }, total_messages: 0 },
+                    last_error: (botEventLogs.get(b.instance_id) || []).filter(l => l.level === 'error').slice(-1)[0] || null,
+                    last_event: (botEventLogs.get(b.instance_id) || []).slice(-1)[0] || null
+                }))
             };
         });
 
@@ -1161,6 +1224,97 @@ router.get('/superadmin/clients', async (req, res) => {
     } catch (e) {
         console.error('❌ Error superadmin endpoints:', e.message);
         return res.status(500).json({ error: e.message });
+    }
+});
+
+// --- SUPERADMIN: Bot Details (logs, AI usage, health) ---
+router.get('/superadmin/bot-details/:instanceId', (req, res) => {
+    if (req.tenant?.role !== 'SUPERADMIN') return res.status(403).json({ error: 'Acceso Denegado' });
+    const { instanceId } = req.params;
+
+    const logs = botEventLogs.get(instanceId) || [];
+    const aiUsage = botAiUsage.get(instanceId) || { gemini: { count: 0, tokens: 0 }, openai: { count: 0, tokens: 0 }, deepseek: { count: 0, tokens: 0 }, total_messages: 0 };
+    const status = sessionStatus.get(instanceId);
+    const config = clientConfigs.get(instanceId);
+
+    // Estimated costs (USD)
+    const costs = {
+        gemini: 0, // Free tier
+        openai: (aiUsage.openai.tokens / 1000000) * 0.60, // gpt-4o-mini output pricing
+        deepseek: (aiUsage.deepseek.tokens / 1000000) * 0.28,
+        total: 0
+    };
+    costs.total = costs.gemini + costs.openai + costs.deepseek;
+
+    res.json({
+        success: true,
+        instance_id: instanceId,
+        company_name: status?.companyName || config?.companyName || 'Desconocido',
+        status: status?.status || 'unknown',
+        health_score: getBotHealthScore(instanceId),
+        reconnect_attempts: reconnectAttempts.get(instanceId) || 0,
+        uptime_seconds: status?.status === 'online' ? process.uptime() : 0,
+        ai_usage: aiUsage,
+        estimated_costs: costs,
+        logs: logs.slice(-50), // Last 50 events
+        error_count: logs.filter(l => l.level === 'error').length,
+        warn_count: logs.filter(l => l.level === 'warn').length
+    });
+});
+
+// --- SUPERADMIN: Bot Actions (reconnect, disconnect, delete) ---
+router.post('/superadmin/bot-action', async (req, res) => {
+    if (req.tenant?.role !== 'SUPERADMIN') return res.status(403).json({ error: 'Acceso Denegado' });
+    const { instanceId, action } = req.body;
+    if (!instanceId || !action) return res.status(400).json({ error: 'instanceId y action son requeridos' });
+
+    try {
+        if (action === 'reconnect') {
+            const config = clientConfigs.get(instanceId);
+            if (!config) return res.status(404).json({ error: 'Configuración del bot no encontrada. Reconecta desde el dashboard del cliente.' });
+            logBotEvent(instanceId, 'info', 'Reconexión forzada por SuperAdmin');
+            reconnectAttempts.set(instanceId, 0);
+            connectToWhatsApp(instanceId, config, null).catch(e => {
+                logBotEvent(instanceId, 'error', `Fallo reconexión forzada: ${e.message}`);
+            });
+            return res.json({ success: true, message: `Reconexión iniciada para ${instanceId}` });
+        }
+
+        if (action === 'disconnect') {
+            const sock = activeSessions.get(instanceId);
+            if (sock) {
+                await sock.logout().catch(() => null);
+                sock.end();
+            }
+            logBotEvent(instanceId, 'warn', 'Desconexión forzada por SuperAdmin');
+            clearSessionRuntime(instanceId);
+            updateSessionStatus(instanceId, 'disconnected', { companyName: clientConfigs.get(instanceId)?.companyName }).catch(() => null);
+            return res.json({ success: true, message: `Bot ${instanceId} desconectado.` });
+        }
+
+        if (action === 'delete') {
+            const sock = activeSessions.get(instanceId);
+            if (sock) {
+                await sock.logout().catch(() => null);
+                sock.end();
+            }
+            logBotEvent(instanceId, 'error', 'Bot ELIMINADO por SuperAdmin');
+            clearSessionRuntime(instanceId);
+            sessionStatus.delete(instanceId);
+            clientConfigs.delete(instanceId);
+            botEventLogs.delete(instanceId);
+            botAiUsage.delete(instanceId);
+            await safeDeletePersistentSession(instanceId);
+            // Delete session folder
+            const sessionPath = `${sessionsDir}/${instanceId}`;
+            if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
+            return res.json({ success: true, message: `Bot ${instanceId} eliminado permanentemente.` });
+        }
+
+        return res.status(400).json({ error: `Acción '${action}' no reconocida. Use: reconnect, disconnect, delete` });
+    } catch (err) {
+        console.error(`❌ SuperAdmin bot-action error:`, err.message);
+        return res.status(500).json({ error: err.message });
     }
 });
 
