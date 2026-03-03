@@ -1,10 +1,18 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { supabase, isSupabaseEnabled } = require('../services/supabaseClient');
 
-const JWT_SECRET = process.env.JWT_SECRET;
+let JWT_SECRET = process.env.JWT_SECRET;
 
-if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
-    throw new Error('FATAL: JWT_SECRET must be defined in production environment');
+if (!JWT_SECRET) {
+    if (process.env.NODE_ENV === 'production') {
+        // Generate a stable per-process secret so the server can start,
+        // but log a critical warning so the operator sets the real one.
+        JWT_SECRET = 'alex-io-fallback-' + crypto.randomBytes(16).toString('hex');
+        console.error('⚠️⚠️⚠️ CRITICAL: JWT_SECRET env var is NOT set! Using a random per-process secret. Tokens will NOT survive restarts. Set JWT_SECRET in Render Dashboard immediately.');
+    } else {
+        JWT_SECRET = 'alex-io-dev-secret-2026';
+    }
 }
 
 /**
