@@ -75,23 +75,45 @@ export default function Login() {
                     window.location.reload(); // Force refresh to ensure routes grab the new Storage
                     return;
                 }
-                // LOGIN — Email + contraseña via Supabase
+                // LOGIN — Email + contraseña via Supabase (valida credenciales)
                 const normalizedEmail = email.trim().toLowerCase();
                 const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
                 if (error) throw error;
 
-                // Guardar token en localStorage para el backend
-                localStorage.setItem('alex_io_token', data.session.access_token);
+                // Obtener JWT del backend (firmado con JWT_SECRET, siempre validable por el middleware)
+                let backendToken = null;
+                let backendRole = data.user?.user_metadata?.role || 'OWNER';
+                try {
+                    const { getPreferredApiBase } = await import('../api.js');
+                    const apiBase = getPreferredApiBase();
+                    const resp = await fetch(`${apiBase}/api/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: normalizedEmail, password })
+                    });
+                    if (resp.ok) {
+                        const backendData = await resp.json();
+                        backendToken = backendData.token;
+                        backendRole = backendData.role || backendRole;
+                    }
+                } catch (backendErr) {
+                    console.warn('⚠️ Backend /api/auth/login failed, falling back to Supabase token:', backendErr.message);
+                }
+
+                // Priorizar el backend JWT; si falla, usar el token de Supabase como fallback
+                const finalToken = backendToken || data.session.access_token;
+
+                localStorage.setItem('alex_io_token', finalToken);
                 localStorage.setItem('demo_email', data.user.email);
-                localStorage.setItem('alex_io_role', data.user?.user_metadata?.role || 'OWNER');
+                localStorage.setItem('alex_io_role', backendRole);
 
                 if (!rememberSession) {
-                    sessionStorage.setItem('alex_io_token', data.session.access_token);
+                    sessionStorage.setItem('alex_io_token', finalToken);
                     localStorage.removeItem('alex_io_token');
                 }
 
                 // Navegar sin recargar la página (mantiene la sesión de Supabase en memoria)
-                navigate((data.user?.user_metadata?.role === 'SUPERADMIN') ? '/superadmin' : '/dashboard');
+                navigate((backendRole === 'SUPERADMIN') ? '/superadmin' : '/dashboard');
             }
         } catch (error) {
             console.error('Auth Error:', error);
