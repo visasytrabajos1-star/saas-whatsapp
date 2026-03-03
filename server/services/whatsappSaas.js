@@ -94,7 +94,7 @@ const hydrateSessionStatus = async () => {
 
         const { data, error } = await supabase
             .from(sessionsTable)
-            .select('instance_id,status,qr_code,updated_at,company_name')
+            .select('instance_id,status,qr_code,updated_at,company_name,tenant_id,owner_email')
             .order('updated_at', { ascending: false })
             .limit(200);
 
@@ -111,6 +111,17 @@ const hydrateSessionStatus = async () => {
                 companyName: row.company_name,
                 provider: null
             });
+
+            // Also hydrate clientConfigs so tenant filtering works in /status
+            if (row.tenant_id) {
+                clientConfigs.set(row.instance_id, {
+                    ...(clientConfigs.get(row.instance_id) || {}),
+                    tenantId: row.tenant_id,
+                    ownerEmail: row.owner_email,
+                    companyName: row.company_name,
+                    provider: 'baileys'
+                });
+            }
         }
 
         console.log(`✅ Session status hydrated from Supabase (${(data || []).length} records).`);
