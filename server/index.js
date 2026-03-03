@@ -153,9 +153,17 @@ app.post('/api/auth/login', async (req, res) => {
             return res.json({ token, tenantId, role });
         }
 
-        // Fallback: passwordless (for existing users or when Supabase not configured)
+        // Fallback: passwordless mock auth (blocked in production by default)
+        const ALLOW_MOCK_AUTH = process.env.ALLOW_MOCK_AUTH === 'true';
+        if (process.env.NODE_ENV === 'production' && !ALLOW_MOCK_AUTH) {
+            return res.status(503).json({
+                error: 'Autenticación mock deshabilitada en producción. Use email + contraseña.',
+                code: 'MOCK_AUTH_DISABLED'
+            });
+        }
+
         const { token, tenantId, role } = buildToken(email);
-        res.json({ token, tenantId, role });
+        res.json({ token, tenantId, role, mockAuth: true });
     } catch (err) {
         console.error('Login error:', err.message);
         res.status(500).json({ error: 'Error al iniciar sesión' });
