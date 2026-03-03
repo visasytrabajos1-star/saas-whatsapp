@@ -1,19 +1,14 @@
-const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { supabase, isSupabaseEnabled } = require('../services/supabaseClient');
 
-let JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET;
 
-if (!JWT_SECRET) {
-    if (process.env.NODE_ENV === 'production') {
-        // Generate a stable per-process secret so the server can start,
-        // but log a critical warning so the operator sets the real one.
-        JWT_SECRET = 'alex-io-fallback-' + crypto.randomBytes(16).toString('hex');
-        console.error('⚠️⚠️⚠️ CRITICAL: JWT_SECRET env var is NOT set! Using a random per-process secret. Tokens will NOT survive restarts. Set JWT_SECRET in Render Dashboard immediately.');
-    } else {
-        JWT_SECRET = 'alex-io-dev-secret-2026';
-    }
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+    throw new Error('⛔ JWT_SECRET is required in production. Set it in your Render Dashboard environment variables.');
 }
+
+const resolveJwtSecret = () => JWT_SECRET || 'alex-io-dev-secret-2026';
+
 
 /**
  * Middleware para validar el token JWT y extraer el tenantId.
@@ -60,7 +55,7 @@ const authenticateTenant = async (req, res, next) => {
         }
 
         // 2. Fallback to Local JWT
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = jwt.verify(token, resolveJwtSecret());
 
         // Inyectamos el tenant en el request para uso posterior
         req.tenant = {
@@ -120,5 +115,5 @@ module.exports = {
     authenticateTenant,
     requireRole,
     requirePlan,
-    JWT_SECRET
+    JWT_SECRET: resolveJwtSecret()
 };
