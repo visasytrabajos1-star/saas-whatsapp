@@ -691,6 +691,12 @@ router.post('/disconnect', async (req, res) => {
         return res.status(404).json({ error: 'Instance not found' });
     }
 
+    // Ownership check
+    const config = clientConfigs.get(instanceId) || sessionStatus.get(instanceId);
+    if (config?.tenantId && req.tenant && req.tenant.role !== 'SUPERADMIN' && config.tenantId !== req.tenant.id) {
+        return res.status(403).json({ error: 'No tienes permisos para desconectar este bot.' });
+    }
+
     if (activeSessions.has(instanceId)) {
         try {
             activeSessions.get(instanceId).logout();
@@ -713,6 +719,11 @@ router.post('/config/:instanceId', async (req, res) => {
     const current = clientConfigs.get(instanceId);
 
     if (!current) return res.status(404).json({ error: 'Instance not found' });
+
+    // Ownership check
+    if (req.tenant && req.tenant.role !== 'SUPERADMIN' && current.tenantId !== req.tenant.id) {
+        return res.status(403).json({ error: 'No tienes permisos para modificar este bot.' });
+    }
 
     // Explicit extraction to avoid injection of unwanted fields, incorporating limiters
     const { maxWords, maxMessages, ...restBody } = req.body;
@@ -898,8 +909,14 @@ router.get('/status', (req, res) => {
 router.get('/status/:instanceId', (req, res) => {
     const { instanceId } = req.params;
     const info = sessionStatus.get(instanceId);
-
     if (!info) return res.status(404).json({ error: 'Instance not found' });
+
+    // Ownership check
+    const config = clientConfigs.get(instanceId);
+    const ownerTenantId = config?.tenantId || info?.tenantId;
+    if (ownerTenantId && req.tenant && req.tenant.role !== 'SUPERADMIN' && ownerTenantId !== req.tenant.id) {
+        return res.status(403).json({ error: 'No tienes permisos para ver el estado de este bot.' });
+    }
 
     res.json({
         instance_id: instanceId,

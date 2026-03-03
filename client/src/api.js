@@ -31,9 +31,13 @@ const shouldTryNextBase = (response) => {
 };
 
 export const fetchWithApiFallback = async (path, options = {}) => {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, headers = {}, ...fetchOptions } = options;
   const bases = getApiBases();
   const errors = [];
+
+  // Inject Authorization header globally
+  const authHeaders = getAuthHeaders();
+  const mergedHeaders = { ...headers, ...authHeaders };
 
   for (const base of bases) {
     const url = `${base}${path}`;
@@ -41,7 +45,7 @@ export const fetchWithApiFallback = async (path, options = {}) => {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(url, { ...fetchOptions, signal: controller.signal });
+      const response = await fetch(url, { ...fetchOptions, headers: mergedHeaders, signal: controller.signal });
       clearTimeout(timeout);
 
       if (!response.ok && shouldTryNextBase(response)) {
