@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, ChevronRight, ChevronLeft, Loader, Wand2, Copy, CheckCircle2 } from 'lucide-react';
+import { Sparkles, ChevronRight, ChevronLeft, Loader, Wand2, Copy, CheckCircle2, Shield } from 'lucide-react';
 import { fetchJsonWithApiFallback } from '../api';
 
 const STEPS = [
@@ -86,6 +86,8 @@ export default function PromptWizard({ onClose, onPromptGenerated, instanceName 
     const [generatedPromptMeta, setGeneratedPromptMeta] = useState(null);
     const [copied, setCopied] = useState(false);
     const [customInput, setCustomInput] = useState('');
+    const [qaResult, setQaResult] = useState(null);
+    const [qaLoading, setQaLoading] = useState(false);
 
     const currentStep = STEPS[step];
     const isLastStep = step === STEPS.length - 1;
@@ -214,6 +216,25 @@ export default function PromptWizard({ onClose, onPromptGenerated, instanceName 
         setTimeout(() => setCopied(false), 2000);
     };
 
+    const handleQA = async () => {
+        setQaLoading(true);
+        try {
+            const { data } = await fetchJsonWithApiFallback('/api/saas/prompt-qa', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: generatedPrompt })
+            });
+            if (data && data.qa) {
+                setQaResult(data.qa);
+            }
+        } catch (err) {
+            console.error(err);
+            alert("No se pudo validar el prompt en este momento.");
+        } finally {
+            setQaLoading(false);
+        }
+    };
+
     const handleUsePrompt = () => {
         onPromptGenerated(generatedPrompt, generatedPromptMeta);
         onClose();
@@ -264,11 +285,26 @@ export default function PromptWizard({ onClose, onPromptGenerated, instanceName 
                                     {copied ? <CheckCircle2 size={16} className="text-green-400" /> : <Copy size={16} />}
                                     {copied ? 'Copiado' : 'Copiar'}
                                 </button>
-                                <button onClick={handleUsePrompt} className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 px-4 py-2 rounded-lg font-bold transition-all">
+                                <button onClick={handleQA} disabled={qaLoading} className="flex flex-col md:flex-row items-center justify-center gap-2 bg-indigo-700 hover:bg-indigo-600 px-4 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50">
+                                    {qaLoading ? <Loader size={16} className="animate-spin" /> : <Shield size={16} />}
+                                    Validar Prompt (QA)
+                                </button>
+                                <button onClick={handleUsePrompt} className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 px-4 py-2 rounded-lg font-bold transition-all line-clamp-1">
                                     ✨ Usar este Prompt
                                 </button>
                             </div>
-                            <button onClick={() => { setGeneratedPrompt(''); setGeneratedPromptMeta(null); setStep(0); }} className="text-slate-500 text-sm hover:text-white transition-colors w-full text-center">
+                            {qaResult && (
+                                <div className="bg-slate-900 border border-indigo-500/50 rounded-lg p-4 mt-2 text-sm animate-in fade-in slide-in-from-top-2">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="font-bold text-indigo-400 flex items-center gap-2">Puntaje IA: <span className="text-xl text-white">{qaResult.score}/10</span></span>
+                                        {qaResult.is_safe ? <span className="bg-emerald-900/40 text-emerald-400 px-2 py-1 rounded text-xs font-bold border border-emerald-500/30">✅ Seguro PII</span> : <span className="bg-red-900/40 text-red-400 px-2 py-1 rounded text-xs font-bold border border-red-500/30">⚠️ Riesgoso PII</span>}
+                                    </div>
+                                    <div className="bg-indigo-950/30 p-3 rounded border border-indigo-900/50">
+                                        <p className="text-indigo-200 italic font-medium leading-relaxed">"{qaResult.feedback}"</p>
+                                    </div>
+                                </div>
+                            )}
+                            <button onClick={() => { setGeneratedPrompt(''); setGeneratedPromptMeta(null); setStep(0); setQaResult(null); }} className="text-slate-500 text-sm hover:text-white transition-colors w-full text-center">
                                 Empezar de nuevo
                             </button>
                         </div>

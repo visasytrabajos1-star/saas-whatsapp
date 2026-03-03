@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useState, Component } from 'react';
 import { Link } from 'react-router-dom';
-import { Shield, Activity, Settings, Smartphone, Plus, Loader, AlertTriangle, CheckCircle2, X, Wand2, LogOut, MessageCircle, Send } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Shield, Activity, Settings, Smartphone, Plus, Loader, AlertTriangle, CheckCircle2, X, Wand2, LogOut, MessageCircle, Send, Globe, Book, Sparkles } from 'lucide-react';
 import PromptWizard from './PromptWizard';
+import PromptCopilot from './PromptCopilot';
+import LiveChat from './LiveChat';
+import KnowledgeBase from './KnowledgeBase';
+import BroadcastCampaign from './BroadcastCampaign';
+import DataCompliance from './DataCompliance';
 import { fetchJsonWithApiFallback, getLastResolvedApiBase, getPreferredApiBase, getAuthHeaders } from '../api';
 
 const VERSION = 'v2.0.4.17';
@@ -47,6 +53,8 @@ class ErrorBoundary extends Component {
 }
 
 function SaasDashboard() {
+  const { t, i18n } = useTranslation();
+
   const userEmail = localStorage.getItem('demo_email') || 'user@app.com';
   const userRole = localStorage.getItem('alex_io_role') || 'OWNER';
   const userTenant = localStorage.getItem('alex_io_tenant') || '';
@@ -62,6 +70,7 @@ function SaasDashboard() {
   const [selected, setSelected] = useState(null);
   const [showNewBotModal, setShowNewBotModal] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const [showCopilot, setShowCopilot] = useState(false);
   const [usage, setUsage] = useState({ messages_sent: 0, plan_limit: 500, tokens_consumed: 0 });
   const [promptVersions, setPromptVersions] = useState([]);
   const [loadingPromptVersions, setLoadingPromptVersions] = useState(false);
@@ -70,6 +79,7 @@ function SaasDashboard() {
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [newBotName, setNewBotName] = useState('');
   const [newBotProvider, setNewBotProvider] = useState('baileys');
+  const [activeTab, setActiveTab] = useState('config'); // 'config' | 'chat'
 
   // Soporte AI Chat
   const [isSupportOpen, setIsSupportOpen] = useState(false);
@@ -82,6 +92,8 @@ function SaasDashboard() {
     provider: 'baileys',
     customPrompt: 'Eres un asistente virtual amigable y profesional.',
     voice: 'nova',
+    maxWords: 50,
+    maxMessages: 10,
     metaApiUrl: '',
     metaPhoneNumberId: '',
     metaAccessToken: '',
@@ -200,6 +212,8 @@ function SaasDashboard() {
       provider: selected.provider || 'baileys',
       customPrompt: selected.customPrompt || 'Eres un asistente virtual amigable y profesional.',
       voice: selected.voice || 'nova',
+      maxWords: selected.maxWords || 50,
+      maxMessages: selected.maxMessages || 10,
       metaApiUrl: selected.metaApiUrl || '',
       metaPhoneNumberId: selected.metaPhoneNumberId || '',
       metaAccessToken: selected.metaAccessToken || '',
@@ -329,6 +343,8 @@ function SaasDashboard() {
         provider,
         customPrompt: `Eres un asistente virtual de ${name}`,
         voice: 'nova',
+        maxWords: 50,
+        maxMessages: 10,
         super_prompt_json: null,
         metaApiUrl: '',
         metaPhoneNumberId: '',
@@ -545,6 +561,24 @@ function SaasDashboard() {
             <p className="text-xs text-slate-400">{userEmail}</p>
             <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">{userRole === 'SUPERADMIN' ? '⭐ Admin' : '👤 Cliente'}</p>
           </div>
+
+          {/* Language Switcher */}
+          <div className="relative group flex items-center gap-1 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-slate-800 transition-colors">
+            <Globe size={16} className="text-slate-400 group-hover:text-white" />
+            <select
+              className="bg-transparent text-sm text-slate-300 font-bold focus:outline-none cursor-pointer appearance-none pl-1 pr-3"
+              value={i18n.language}
+              onChange={(e) => i18n.changeLanguage(e.target.value)}
+            >
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="pt">Português</option>
+              <option value="fr">Français</option>
+              <option value="de">Deutsch</option>
+              <option value="zh">中文</option>
+            </select>
+          </div>
+
           <Link to="/pricing" className="bg-blue-600 px-4 py-2 rounded font-bold hover:bg-blue-500 text-sm">Planes</Link>
           <button
             onClick={() => {
@@ -585,7 +619,7 @@ function SaasDashboard() {
             </p>
           </div>
 
-          <h2 className="text-xs font-bold uppercase text-slate-500 tracking-widest mb-4">Mis Bots</h2>
+          <h2 className="text-xs font-bold uppercase text-slate-500 tracking-widest mb-4">{t('dashboard.myBots', 'Mis Bots')}</h2>
           <div className="space-y-2 flex-1 overflow-auto">
             {instances.map((inst) => (
               <button key={inst.id} onClick={() => setSelected(inst)} className={`w-full text-left p-3 rounded-lg flex items-center justify-between ${selected?.id === inst.id ? 'bg-blue-600' : 'bg-slate-900 hover:bg-slate-800'}`}>
@@ -599,259 +633,361 @@ function SaasDashboard() {
           </div>
           <button
             onClick={() => setShowNewBotModal(true)}
-            disabled={connecting}
-            className="w-full mt-4 py-2 border border-dashed border-slate-700 text-slate-500 rounded-lg hover:border-blue-500 hover:text-blue-500 flex items-center justify-center gap-2 disabled:opacity-50 shrink-0"
+            className="w-full mt-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl border border-slate-700 flex items-center justify-center gap-2"
           >
-            {connecting ? <Loader className="animate-spin" size={16} /> : <Plus size={16} />} <span>Nuevo Bot</span>
+            <Plus size={20} /> {t('dashboard.createNewBot', 'Añadir Nuevo')}
           </button>
         </aside>
 
-        <div className="flex-1 p-6 overflow-auto">
+        <div className="flex-1 p-6 overflow-hidden flex flex-col">
           {selected ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-                <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Settings size={20} className="text-blue-500" /> Configuración</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Nombre del Bot</label>
-                    <input className="w-full bg-slate-900 border border-slate-700 rounded p-2" value={configDraft.name} onChange={(e) => setConfigDraft((prev) => ({ ...prev, name: e.target.value }))} />
-                  </div>
+            <div className="flex flex-col h-full w-full max-w-7xl mx-auto">
+              {/* Tabs */}
+              <div className="flex gap-6 mb-4 border-b border-slate-800 pb-2 flex-shrink-0">
+                <button onClick={() => setActiveTab('config')} className={`font-bold pb-2 border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'config' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><Settings size={16} /> Configuración & Analítica</button>
+                <button onClick={() => setActiveTab('chat')} className={`font-bold pb-2 border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'chat' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><MessageCircle size={16} /> Live Chat (Operador)</button>
+                <button onClick={() => setActiveTab('rag')} className={`font-bold pb-2 border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'rag' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><Book size={16} /> RAG (Conocimiento)</button>
+                <button onClick={() => setActiveTab('broadcast')} className={`font-bold pb-2 border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'broadcast' ? 'border-fuchsia-500 text-fuchsia-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><Send size={16} /> Campañas (Broadcast)</button>
+                <button onClick={() => setActiveTab('compliance')} className={`font-bold pb-2 border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'compliance' ? 'border-cyan-500 text-cyan-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><Shield size={16} /> Auditoría & Compliance</button>
+              </div>
 
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Canal WhatsApp (QR o Cloud)</label>
-                    <select className="w-full bg-slate-900 border border-slate-700 rounded p-2" value={configDraft.provider} onChange={(e) => setConfigDraft((prev) => ({ ...prev, provider: e.target.value }))}>
-                      {PROVIDERS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                    </select>
-                  </div>
+              {activeTab === 'config' ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 overflow-y-auto pb-6 pr-2">
+                  <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 h-max">
+                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Settings size={20} className="text-blue-500" /> Configuración</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm text-slate-400 mb-1">Nombre del Bot</label>
+                        <input className="w-full bg-slate-900 border border-slate-700 rounded p-2" value={configDraft.name} onChange={(e) => setConfigDraft((prev) => ({ ...prev, name: e.target.value }))} />
+                      </div>
 
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Voz del Bot (IA)</label>
-                    <select className="w-full bg-slate-900 border border-slate-700 rounded p-2" value={configDraft.voice || 'nova'} onChange={(e) => setConfigDraft((prev) => ({ ...prev, voice: e.target.value }))}>
-                      <option value="nova">Nova (Femenina - Natural)</option>
-                      <option value="onyx">Onyx (Masculina - Profunda)</option>
-                      <option value="fable">Fable (Masculina - Animada)</option>
-                      <option value="alloy">Alloy (Andrógina - Directa)</option>
-                      <option value="echo">Echo (Masculina - Suave)</option>
-                      <option value="shimmer">Shimmer (Femenina - Clara)</option>
-                    </select>
-                  </div>
+                      <div>
+                        <label className="block text-sm text-slate-400 mb-1">Canal WhatsApp (QR o Cloud)</label>
+                        <select className="w-full bg-slate-900 border border-slate-700 rounded p-2" value={configDraft.provider} onChange={(e) => setConfigDraft((prev) => ({ ...prev, provider: e.target.value }))}>
+                          {PROVIDERS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                        </select>
+                      </div>
 
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Prompt Personalizado (Cerebro AI)</label>
-                    <div className="flex gap-2 mb-2 pb-2 border-b border-slate-700/50">
-                      <button onClick={() => setConfigDraft(p => ({ ...p, customPrompt: 'Eres un VENDEDOR EXPERTO altamente persuasivo. Tu meta es calificar al usuario y cerrar ventas. Sé dinámico y responde a objeciones.' }))} className="text-[10px] bg-indigo-900/40 hover:bg-indigo-800 text-indigo-300 px-2 py-1 rounded border border-indigo-700/50 uppercase tracking-wide font-bold transition-colors">🎯 Vendedor (Sales)</button>
-                      <button onClick={() => setConfigDraft(p => ({ ...p, customPrompt: 'Eres un agente de SOPORTE TÉCNICO paciente y resolutivo. Solicita el número de ticket y guía paso a paso al usuario.' }))} className="text-[10px] bg-teal-900/40 hover:bg-teal-800 text-teal-300 px-2 py-1 rounded border border-teal-700/50 uppercase tracking-wide font-bold transition-colors">🎧 Soporte (Support)</button>
-                      <button onClick={() => setConfigDraft(p => ({ ...p, customPrompt: 'Eres un ASISTENTE MÉDICO. Tu trabajo es agendar citas para la clínica. Pregunta por síntomas de manera empática pero no des diagnósticos definitivos.' }))} className="text-[10px] bg-rose-900/40 hover:bg-rose-800 text-rose-300 px-2 py-1 rounded border border-rose-700/50 uppercase tracking-wide font-bold transition-colors">⚕️ Salud (Health)</button>
-                    </div>
-                    <div className="flex gap-2 mb-1">
-                      <button onClick={() => setShowWizard(true)} className="flex items-center gap-1 text-xs bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 px-3 py-1 rounded-full font-bold transition-all mt-1">
-                        <Wand2 size={12} /> Asistente Creador IA
-                      </button>
-                    </div>
-                    <textarea className="w-full bg-slate-900 border border-slate-700 rounded p-2 h-32" value={configDraft.customPrompt} onChange={(e) => setConfigDraft((prev) => ({ ...prev, customPrompt: e.target.value }))} />
+                      <div>
+                        <label className="block text-sm text-slate-400 mb-1">Voz del Bot (IA)</label>
+                        <select className="w-full bg-slate-900 border border-slate-700 rounded p-2" value={configDraft.voice || 'nova'} onChange={(e) => setConfigDraft((prev) => ({ ...prev, voice: e.target.value }))}>
+                          <option value="nova">Nova (Femenina - Natural)</option>
+                          <option value="onyx">Onyx (Masculina - Profunda)</option>
+                          <option value="fable">Fable (Masculina - Animada)</option>
+                          <option value="alloy">Alloy (Andrógina - Directa)</option>
+                          <option value="echo">Echo (Masculina - Suave)</option>
+                          <option value="shimmer">Shimmer (Femenina - Clara)</option>
+                        </select>
+                      </div>
 
-                    <div className="mt-3 bg-slate-900 border border-slate-700 rounded p-3">
-                      <p className="text-xs text-slate-400 mb-2 uppercase tracking-wider font-bold">Versiones Fase 2</p>
-                      {loadingPromptVersions ? (
-                        <p className="text-xs text-slate-500">Cargando versiones...</p>
-                      ) : promptVersions.length === 0 ? (
-                        <p className="text-xs text-slate-500">Aún no hay versiones registradas para esta instancia.</p>
-                      ) : (
-                        <div className="space-y-2 max-h-40 overflow-auto pr-1">
-                          {promptVersions.map((v) => (
-                            <div key={v.id} className="border border-slate-700 rounded p-2">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-xs text-slate-300 font-semibold">{v.version || 'v1'} · {v.status}</p>
-                                <p className="text-[10px] text-slate-500">{v.created_at ? new Date(v.created_at).toLocaleString() : ''}</p>
-                              </div>
-                              <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{v.prompt_text || 'Sin contenido'}</p>
-                              <div className="flex gap-2 mt-2">
-                                {v.status !== 'active' && (
-                                  <button
-                                    onClick={() => handlePromotePromptVersion(v)}
-                                    disabled={promotingVersionId === v.id}
-                                    className="text-[11px] bg-green-700 hover:bg-green-600 px-2 py-1 rounded disabled:opacity-50"
-                                  >
-                                    Activar
-                                  </button>
-                                )}
-                                {v.status !== 'archived' && (
-                                  <button
-                                    onClick={() => handleArchivePromptVersion(v)}
-                                    disabled={promotingVersionId === v.id}
-                                    className="text-[11px] bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded disabled:opacity-50"
-                                  >
-                                    Archivar
-                                  </button>
-                                )}
-                              </div>
+                      <div>
+                        <label className="block text-sm text-slate-400 mb-1">Prompt Personalizado (Cerebro AI)</label>
+                        <div className="flex gap-2 mb-2 pb-2 border-b border-slate-700/50">
+                          <button onClick={() => setConfigDraft(p => ({ ...p, customPrompt: 'Eres un VENDEDOR EXPERTO altamente persuasivo. Tu meta es calificar al usuario y cerrar ventas. Sé dinámico y responde a objeciones.' }))} className="text-[10px] bg-indigo-900/40 hover:bg-indigo-800 text-indigo-300 px-2 py-1 rounded border border-indigo-700/50 uppercase tracking-wide font-bold transition-colors">🎯 Vendedor (Sales)</button>
+                          <button onClick={() => setConfigDraft(p => ({ ...p, customPrompt: 'Eres un agente de SOPORTE TÉCNICO paciente y resolutivo. Solicita el número de ticket y guía paso a paso al usuario.' }))} className="text-[10px] bg-teal-900/40 hover:bg-teal-800 text-teal-300 px-2 py-1 rounded border border-teal-700/50 uppercase tracking-wide font-bold transition-colors">🎧 Soporte (Support)</button>
+                          <button onClick={() => setConfigDraft(p => ({ ...p, customPrompt: 'Eres un ASISTENTE MÉDICO. Tu trabajo es agendar citas para la clínica. Pregunta por síntomas de manera empática pero no des diagnósticos definitivos.' }))} className="text-[10px] bg-rose-900/40 hover:bg-rose-800 text-rose-300 px-2 py-1 rounded border border-rose-700/50 uppercase tracking-wide font-bold transition-colors">⚕️ Salud (Health)</button>
+                        </div>
+                        <div className="flex gap-2 mb-1">
+                          <button onClick={() => setShowWizard(true)} className="flex items-center gap-1 text-xs bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 px-3 py-1 rounded-full font-bold transition-all mt-1">
+                            <Wand2 size={12} /> Asistente Creador IA
+                          </button>
+                          <button onClick={() => setShowCopilot(true)} className="flex items-center gap-1 text-xs bg-indigo-600 hover:bg-indigo-500 px-3 py-1 rounded-full font-bold transition-all mt-1">
+                            <Sparkles size={12} /> Mejorar con IA
+                          </button>
+                        </div>
+                        <textarea className="w-full bg-slate-900 border border-slate-700 rounded p-2 h-32" value={configDraft.customPrompt} onChange={(e) => setConfigDraft((prev) => ({ ...prev, customPrompt: e.target.value }))} />
+
+                        <div className="mt-3 bg-slate-900 border border-slate-700 rounded p-3">
+                          <p className="text-xs text-slate-400 mb-2 uppercase tracking-wider font-bold">Versiones Fase 2</p>
+                          {loadingPromptVersions ? (
+                            <p className="text-xs text-slate-500">Cargando versiones...</p>
+                          ) : promptVersions.length === 0 ? (
+                            <p className="text-xs text-slate-500">Aún no hay versiones registradas para esta instancia.</p>
+                          ) : (
+                            <div className="space-y-2 max-h-40 overflow-auto pr-1">
+                              {promptVersions.map((v) => (
+                                <div key={v.id} className="border border-slate-700 rounded p-2">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-xs text-slate-300 font-semibold">{v.version || 'v1'} · {v.status}</p>
+                                    <p className="text-[10px] text-slate-500">{v.created_at ? new Date(v.created_at).toLocaleString() : ''}</p>
+                                  </div>
+                                  <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{v.prompt_text || 'Sin contenido'}</p>
+                                  <div className="flex gap-2 mt-2">
+                                    {v.status !== 'active' && (
+                                      <button
+                                        onClick={() => handlePromotePromptVersion(v)}
+                                        disabled={promotingVersionId === v.id}
+                                        className="text-[11px] bg-green-700 hover:bg-green-600 px-2 py-1 rounded disabled:opacity-50"
+                                      >
+                                        Activar
+                                      </button>
+                                    )}
+                                    {v.status !== 'archived' && (
+                                      <button
+                                        onClick={() => handleArchivePromptVersion(v)}
+                                        disabled={promotingVersionId === v.id}
+                                        className="text-[11px] bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded disabled:opacity-50"
+                                      >
+                                        Archivar
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          )}
+                        </div>
+                      </div>
+
+                      {/* AI Limiters Section */}
+                      <div className="space-y-4 p-4 bg-slate-900 rounded-xl border border-slate-700 mt-4 rounded">
+                        <h4 className="text-sm font-bold text-slate-300 flex items-center gap-2">
+                          <Activity size={16} className="text-blue-500" /> Limitadores de Uso de IA
+                        </h4>
+
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="text-xs text-slate-400 font-bold">Límite de Palabras por Respuesta</label>
+                            <span className="bg-blue-900/50 text-blue-300 text-[10px] px-2 py-0.5 rounded font-mono">{configDraft.maxWords} palabras</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="10"
+                            max="200"
+                            step="5"
+                            value={configDraft.maxWords}
+                            onChange={(e) => setConfigDraft((p) => ({ ...p, maxWords: parseInt(e.target.value) }))}
+                            className="w-full accent-blue-500"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1">Fuerza a la IA a ser concisa para ahorrar tokens y mejorar conversión.</p>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="text-xs text-slate-400 font-bold">Mensajes Máximos por Lead</label>
+                            <span className="bg-purple-900/50 text-purple-300 text-[10px] px-2 py-0.5 rounded font-mono">{configDraft.maxMessages} interacciones</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="2"
+                            max="50"
+                            step="1"
+                            value={configDraft.maxMessages}
+                            onChange={(e) => setConfigDraft((p) => ({ ...p, maxMessages: parseInt(e.target.value) }))}
+                            className="w-full accent-purple-500"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1">Si el lead alcanza este límite, el bot se pausa y notifica a un humano.</p>
+                        </div>
+                      </div>
+
+                      {configDraft.provider === 'meta' && (
+                        <div className="space-y-3 p-3 bg-slate-900 rounded border border-blue-500/30">
+                          <h4 className="text-sm font-bold text-blue-400">Configuración Meta Cloud API</h4>
+                          <div>
+                            <label className="block text-xs text-slate-400 mb-1">Meta API URL</label>
+                            <input className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm" placeholder="https://graph.facebook.com/v20.0" value={configDraft.metaApiUrl} onChange={(e) => setConfigDraft((prev) => ({ ...prev, metaApiUrl: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-slate-400 mb-1">Phone Number ID</label>
+                            <input className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm" value={configDraft.metaPhoneNumberId} onChange={(e) => setConfigDraft((prev) => ({ ...prev, metaPhoneNumberId: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-slate-400 mb-1">Access Token</label>
+                            <input className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm" type="password" value={configDraft.metaAccessToken} onChange={(e) => setConfigDraft((prev) => ({ ...prev, metaAccessToken: e.target.value }))} />
+                          </div>
                         </div>
                       )}
-                    </div>
-                  </div>
 
-                  {configDraft.provider === 'meta' && (
-                    <div className="space-y-3 p-3 bg-slate-900 rounded border border-blue-500/30">
-                      <h4 className="text-sm font-bold text-blue-400">Configuración Meta Cloud API</h4>
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Meta API URL</label>
-                        <input className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm" placeholder="https://graph.facebook.com/v20.0" value={configDraft.metaApiUrl} onChange={(e) => setConfigDraft((prev) => ({ ...prev, metaApiUrl: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Phone Number ID</label>
-                        <input className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm" value={configDraft.metaPhoneNumberId} onChange={(e) => setConfigDraft((prev) => ({ ...prev, metaPhoneNumberId: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Access Token</label>
-                        <input className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm" type="password" value={configDraft.metaAccessToken} onChange={(e) => setConfigDraft((prev) => ({ ...prev, metaAccessToken: e.target.value }))} />
-                      </div>
-                    </div>
-                  )}
-
-                  {configDraft.provider === '360dialog' && (
-                    <div className="space-y-3 p-3 bg-slate-900 rounded border border-green-500/30">
-                      <h4 className="text-sm font-bold text-green-400">Configuración 360Dialog</h4>
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">360Dialog API Key</label>
-                        <input className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm" type="password" value={configDraft.dialogApiKey} onChange={(e) => setConfigDraft((prev) => ({ ...prev, dialogApiKey: e.target.value }))} />
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="mt-6 pt-4 border-t border-slate-700">
-                    <h3 className="text-md font-bold text-slate-300 mb-3 flex items-center gap-2">🔗 Integraciones CRM</h3>
-                    <div className="bg-slate-900 border border-orange-500/30 rounded p-4">
-                      <h4 className="text-sm font-bold text-orange-400 mb-2">HubSpot CRM</h4>
-                      <label className="block text-xs text-slate-400 mb-1">Private App Token (API Key)</label>
-                      <input
-                        className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm"
-                        type="password"
-                        placeholder="pat-na1-..."
-                        value={configDraft.hubspotAccessToken || ''}
-                        onChange={(e) => setConfigDraft((prev) => ({ ...prev, hubspotAccessToken: e.target.value }))}
-                      />
-                      <p className="text-[10px] text-slate-500 mt-2 leading-tight">La IA leerá las conversaciones en tiempo real y enviará los prospectos a tu cuenta de HubSpot calificándolos como Fríos, Tibios o Calientes.</p>
-                    </div>
-
-                    <div className="bg-slate-900 border border-pink-500/30 rounded p-4 mt-4">
-                      <h4 className="text-sm font-bold text-pink-400 mb-2">Copper CRM</h4>
-                      <div className="space-y-3">
-                        <div>
-                          <label className="block text-xs text-slate-400 mb-1">User Email</label>
-                          <input
-                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm"
-                            placeholder="usuario@empresa.com"
-                            value={configDraft.copperUserEmail || ''}
-                            onChange={(e) => setConfigDraft((prev) => ({ ...prev, copperUserEmail: e.target.value }))}
-                          />
+                      {configDraft.provider === '360dialog' && (
+                        <div className="space-y-3 p-3 bg-slate-900 rounded border border-green-500/30">
+                          <h4 className="text-sm font-bold text-green-400">Configuración 360Dialog</h4>
+                          <div>
+                            <label className="block text-xs text-slate-400 mb-1">360Dialog API Key</label>
+                            <input className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm" type="password" value={configDraft.dialogApiKey} onChange={(e) => setConfigDraft((prev) => ({ ...prev, dialogApiKey: e.target.value }))} />
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-xs text-slate-400 mb-1">API Key</label>
+                      )}
+
+                      <div className="mt-6 pt-4 border-t border-slate-700">
+                        <h3 className="text-md font-bold text-slate-300 mb-3 flex items-center gap-2">🔗 Integraciones CRM</h3>
+                        <div className="bg-slate-900 border border-orange-500/30 rounded p-4">
+                          <h4 className="text-sm font-bold text-orange-400 mb-2">HubSpot CRM</h4>
+                          <label className="block text-xs text-slate-400 mb-1">Private App Token (API Key)</label>
                           <input
                             className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm"
                             type="password"
-                            placeholder="xxxxxxxx-xxxx-xxxx..."
-                            value={configDraft.copperApiKey || ''}
-                            onChange={(e) => setConfigDraft((prev) => ({ ...prev, copperApiKey: e.target.value }))}
+                            placeholder="pat-na1-..."
+                            value={configDraft.hubspotAccessToken || ''}
+                            onChange={(e) => setConfigDraft((prev) => ({ ...prev, hubspotAccessToken: e.target.value }))}
                           />
+                          <p className="text-[10px] text-slate-500 mt-2 leading-tight">La IA leerá las conversaciones en tiempo real y enviará los prospectos a tu cuenta de HubSpot calificándolos como Fríos, Tibios o Calientes.</p>
+                        </div>
+
+                        <div className="bg-slate-900 border border-pink-500/30 rounded p-4 mt-4">
+                          <h4 className="text-sm font-bold text-pink-400 mb-2">Copper CRM</h4>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">User Email</label>
+                              <input
+                                className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm"
+                                placeholder="usuario@empresa.com"
+                                value={configDraft.copperUserEmail || ''}
+                                onChange={(e) => setConfigDraft((prev) => ({ ...prev, copperUserEmail: e.target.value }))}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">API Key</label>
+                              <input
+                                className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm"
+                                type="password"
+                                placeholder="xxxxxxxx-xxxx-xxxx..."
+                                value={configDraft.copperApiKey || ''}
+                                onChange={(e) => setConfigDraft((prev) => ({ ...prev, copperApiKey: e.target.value }))}
+                              />
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-slate-500 mt-2 leading-tight">Sincroniza y califica automáticamente los perfiles de prospectos en Copper.</p>
+                        </div>
+
+                        <div className="bg-slate-900 border border-blue-500/30 rounded p-4 mt-4">
+                          <h4 className="text-sm font-bold text-blue-400 mb-2">GoHighLevel (GHL v2)</h4>
+                          <label className="block text-xs text-slate-400 mb-1">API Key (Bearer Token)</label>
+                          <input
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm"
+                            type="password"
+                            placeholder="pit-... (LeadConnector Token)"
+                            value={configDraft.ghlApiKey || ''}
+                            onChange={(e) => setConfigDraft((prev) => ({ ...prev, ghlApiKey: e.target.value }))}
+                          />
+                          <p className="text-[10px] text-slate-500 mt-2 leading-tight">Inyecta leads extraídos nativamente por la IA usando la API v2 de LeadConnector.</p>
+                        </div>
+
+                        <div className="bg-slate-900 border border-emerald-500/30 rounded p-4 mt-4 mb-4">
+                          <h4 className="text-sm font-bold text-emerald-400 mb-2 flex items-center gap-1"><Globe size={14} /> Webhook Custom (Zapier/Make)</h4>
+                          <label className="block text-xs text-slate-400 mb-1">Webhook URL Endpoint</label>
+                          <input
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm"
+                            placeholder="https://hooks.zapier.com/hooks/catch/..."
+                            value={configDraft.webhookUrl || ''}
+                            onChange={(e) => setConfigDraft((prev) => ({ ...prev, webhookUrl: e.target.value }))}
+                          />
+                          <p className="text-[10px] text-slate-500 mt-2 leading-tight">Envía los datos procesados del perfil del usuario (nombre, correo) vía POST estandarizado.</p>
                         </div>
                       </div>
-                      <p className="text-[10px] text-slate-500 mt-2 leading-tight">Sincroniza y califica automáticamente los perfiles de prospectos en Copper.</p>
+
+                      <button
+                        onClick={handleSaveConfig}
+                        disabled={savingConfig}
+                        className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-blue-900/20 transition-all disabled:opacity-50"
+                      >
+                        {savingConfig ? <Loader className="animate-spin" size={20} /> : <Settings size={20} />}
+                        {savingConfig ? t('dashboard.saving', 'Guardando...') : t('dashboard.saveConfig', 'Guardar Configuración')}
+                      </button>
                     </div>
                   </div>
 
-                  <button onClick={handleSaveConfig} disabled={savingConfig} className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded font-bold disabled:opacity-50 transition-colors mt-4">
-                    <span>{savingConfig ? 'Guardando...' : 'Guardar Configuración'}</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 h-full flex flex-col">
-                {analytics && (
-                  <div className="mb-6 p-4 bg-slate-900/50 rounded-lg border border-slate-700">
-                    <h3 className="text-sm font-bold mb-3 text-slate-300 flex items-center gap-2"><Activity size={16} className="text-blue-400" /> Analítica de Intenciones (7 Días)</h3>
-                    <div className="grid grid-cols-3 gap-2 mb-4">
-                      <div className="bg-emerald-900/20 border border-emerald-800/30 p-2 rounded text-center">
-                        <p className="text-[10px] text-emerald-400 uppercase tracking-widest">Ventas</p>
-                        <p className="text-xl font-bold text-white">{analytics.intent.ventas}</p>
-                      </div>
-                      <div className="bg-amber-900/20 border border-amber-800/30 p-2 rounded text-center">
-                        <p className="text-[10px] text-amber-400 uppercase tracking-widest">Soporte</p>
-                        <p className="text-xl font-bold text-white">{analytics.intent.soporte}</p>
-                      </div>
-                      <div className="bg-slate-800/50 border border-slate-700/50 p-2 rounded text-center">
-                        <p className="text-[10px] text-slate-400 uppercase tracking-widest">Otros</p>
-                        <p className="text-xl font-bold text-white">{analytics.intent.otros}</p>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2 font-bold">Volumen de Mensajes</p>
-                      <div className="flex items-end gap-1 h-20 opacity-80">
-                        {analytics.volume.map((vol, idx) => {
-                          const maxVol = Math.max(...analytics.volume.map(v => v.count), 1);
-                          const heightPct = (vol.count / maxVol) * 100;
-                          return (
-                            <div key={idx} className="flex-1 flex flex-col items-center gap-1 group">
-                              <div className="w-full bg-blue-500/80 rounded-t relative group-hover:bg-blue-400 transition-colors" style={{ height: `${Math.max(heightPct, 5)}%` }}>
-                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] text-white opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800 px-1 py-0.5 rounded">{vol.count}</span>
-                              </div>
-                              <span className="text-[8px] text-slate-500">{vol.date.split('-')[2]}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Activity size={20} className="text-green-500" /> Actividad Reciente</h3>
-                <div className="flex-1 overflow-auto">
-                  <div className="bg-slate-900 p-4 rounded border border-slate-800 text-sm">
-                    {logs.length === 0 ? (
-                      <p className="text-slate-500 italic py-4 text-center">Esperando actividad cognitiva...</p>
-                    ) : (
-                      <div className="space-y-4">
-                        {logs.map((log, idx) => (
-                          <div key={idx} className="border-l-2 border-slate-700 pl-3 py-1">
-                            <p className="text-slate-200 font-medium">"{log.text}"</p>
-                            <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest font-bold flex items-center gap-2">
-                              <span>Respondido por</span>
-                              <span className="text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded border border-blue-400/20">{log.ai_model || 'gemini-flash'}</span>
-                            </p>
+                  <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 h-full flex flex-col">
+                    {analytics && (
+                      <div className="mb-6 p-4 bg-slate-900/50 rounded-lg border border-slate-700">
+                        <h3 className="text-sm font-bold mb-3 text-slate-300 flex items-center gap-2"><Activity size={16} className="text-blue-400" /> Analítica de Intenciones (7 Días)</h3>
+                        <div className="grid grid-cols-3 gap-2 mb-4">
+                          <div className="bg-emerald-900/20 border border-emerald-800/30 p-2 rounded text-center">
+                            <p className="text-[10px] text-emerald-400 uppercase tracking-widest">Ventas</p>
+                            <p className="text-xl font-bold text-white">{analytics.intent.ventas}</p>
                           </div>
-                        ))}
+                          <div className="bg-amber-900/20 border border-amber-800/30 p-2 rounded text-center">
+                            <p className="text-[10px] text-amber-400 uppercase tracking-widest">Soporte</p>
+                            <p className="text-xl font-bold text-white">{analytics.intent.soporte}</p>
+                          </div>
+                          <div className="bg-slate-800/50 border border-slate-700/50 p-2 rounded text-center">
+                            <p className="text-[10px] text-slate-400 uppercase tracking-widest">Otros</p>
+                            <p className="text-xl font-bold text-white">{analytics.intent.otros}</p>
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2 font-bold">Volumen de Mensajes</p>
+                          <div className="flex items-end gap-1 h-20 opacity-80">
+                            {analytics.volume.map((vol, idx) => {
+                              const maxVol = Math.max(...analytics.volume.map(v => v.count), 1);
+                              const heightPct = (vol.count / maxVol) * 100;
+                              return (
+                                <div key={idx} className="flex-1 flex flex-col items-center gap-1 group">
+                                  <div className="w-full bg-blue-500/80 rounded-t relative group-hover:bg-blue-400 transition-colors" style={{ height: `${Math.max(heightPct, 5)}%` }}>
+                                    <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] text-white opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800 px-1 py-0.5 rounded">{vol.count}</span>
+                                  </div>
+                                  <span className="text-[8px] text-slate-500">{vol.date.split('-')[2]}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
                     )}
-                    <div className="mt-6 pt-4 border-t border-slate-800 flex justify-between items-end">
-                      <div className="flex flex-col gap-1">
-                        <p className="text-slate-500 text-[10px] flex items-center gap-3">
-                          <span>Canal: {providerLabel}</span>
-                          <span className="text-blue-400 uppercase tracking-tighter">Estado: {selected.status || 'desconocido'}</span>
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        {(selected.status === 'disconnected' || String(selected.status).startsWith('fatal_') || String(selected.status).startsWith('failed_')) && providerLabel === 'Baileys (QR)' ? (
-                          <button
-                            onClick={handleRestartInstance}
-                            className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white transition-colors px-3 py-1 rounded font-bold uppercase tracking-widest shadow-lg shadow-blue-500/20"
-                          >
-                            Generar Nuevo QR
-                          </button>
+
+                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Activity size={20} className="text-green-500" /> Actividad Reciente</h3>
+                    <div className="flex-1 overflow-auto">
+                      <div className="bg-slate-900 p-4 rounded border border-slate-800 text-sm">
+                        {logs.length === 0 ? (
+                          <p className="text-slate-500 italic py-4 text-center">Esperando actividad cognitiva...</p>
                         ) : (
-                          <button
-                            onClick={handleRestartInstance}
-                            className="text-[10px] bg-red-900/30 text-red-400 border border-red-800/50 hover:bg-red-800 hover:text-white transition-colors px-3 py-1 rounded font-bold uppercase tracking-widest"
-                          >
-                            Reiniciar Conector
-                          </button>
+                          <div className="space-y-4">
+                            {logs.map((log, idx) => (
+                              <div key={idx} className="border-l-2 border-slate-700 pl-3 py-1">
+                                <p className="text-slate-200 font-medium">"{log.text}"</p>
+                                <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest font-bold flex items-center gap-2">
+                                  <span>Respondido por</span>
+                                  <span className="text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded border border-blue-400/20">{log.ai_model || 'gemini-flash'}</span>
+                                </p>
+                              </div>
+                            ))}
+                          </div>
                         )}
+                        <div className="mt-6 pt-4 border-t border-slate-800 flex justify-between items-end">
+                          <div className="flex flex-col gap-1">
+                            <p className="text-slate-500 text-[10px] flex items-center gap-3">
+                              <span>Canal: {providerLabel}</span>
+                              <span className="text-blue-400 uppercase tracking-tighter">Estado: {selected.status || 'desconocido'}</span>
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            {(selected.status === 'disconnected' || String(selected.status).startsWith('fatal_') || String(selected.status).startsWith('failed_')) && providerLabel === 'Baileys (QR)' ? (
+                              <button
+                                onClick={handleRestartInstance}
+                                className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white transition-colors px-3 py-1 rounded font-bold uppercase tracking-widest shadow-lg shadow-blue-500/20"
+                              >
+                                Generar Nuevo QR
+                              </button>
+                            ) : (
+                              <button
+                                onClick={handleRestartInstance}
+                                className="text-[10px] bg-red-900/30 text-red-400 border border-red-800/50 hover:bg-red-800 hover:text-white transition-colors px-3 py-1 rounded font-bold uppercase tracking-widest"
+                              >
+                                Reiniciar Conector
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              ) : activeTab === 'chat' ? (
+                <div className="flex-1 overflow-hidden">
+                  <LiveChat instanceId={selected.instanceId || selected.id} tenantId={userTenant} />
+                </div>
+              ) : activeTab === 'rag' ? (
+                <div className="flex-1 overflow-hidden">
+                  <KnowledgeBase instanceId={selected.instanceId || selected.id} tenantId={userTenant} />
+                </div>
+              ) : activeTab === 'broadcast' ? (
+                <div className="flex-1 overflow-auto p-4 sm:p-6 pb-24 h-full">
+                  <BroadcastCampaign instanceId={selected.instanceId || selected.id} instanceName={selected.name} />
+                </div>
+              ) : activeTab === 'compliance' ? (
+                <div className="flex-1 overflow-hidden">
+                  <DataCompliance instanceId={selected.instanceId || selected.id} tenantId={userTenant} />
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-slate-500">
@@ -895,6 +1031,17 @@ function SaasDashboard() {
             }
           }}
           instanceName={selected?.name || configDraft.name}
+        />
+      )}
+
+      {/* Prompt Co-Pilot Modal */}
+      {showCopilot && selected && (
+        <PromptCopilot
+          currentPrompt={configDraft.customPrompt}
+          onClose={() => setShowCopilot(false)}
+          onPromptImproved={(newPrompt) => {
+            setConfigDraft(prev => ({ ...prev, customPrompt: newPrompt }));
+          }}
         />
       )}
 

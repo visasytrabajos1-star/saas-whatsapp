@@ -13,6 +13,11 @@ const alexBrain = require('./alexBrain');
 const { supabase, isSupabaseEnabled } = require('./supabaseClient');
 const hubspotService = require('./hubspotService');
 const copperService = require('./copperService');
+const ragService = require('./ragService');
+const multer = require('multer');
+const pdfParse = require('pdf-parse');
+const upload = multer({ storage: multer.memoryStorage() });
+
 const {
     savePromptVersion,
     listPromptVersions,
@@ -27,6 +32,7 @@ const clientConfigs = new Map();
 const sessionStatus = new Map();
 const reconnectAttempts = new Map();
 const conversationMemory = new Map(); // key: instanceId_remoteJid
+const pausedLeads = new Map(); // key: instanceId_remoteJid
 const sessionsDir = './sessions';
 const sessionsTable = process.env.WHATSAPP_SESSIONS_TABLE || 'whatsapp_sessions';
 const usageTable = 'tenant_usage_metrics';
@@ -186,6 +192,10 @@ async function handleQRMessage(sock, msg, instanceId) {
     const config = clientConfigs.get(instanceId) || { companyName: 'ALEX IO' };
     const tenantId = config.tenantId;
 
+    // --- Omni-Language Inbox Translation ---
+    const translationResult = await alexBrain.translateIncomingMessage(text, 'es');
+    const processedText = translationResult.translated || translationResult.original;
+
     if (tenantId && isSupabaseEnabled) {
         supabase.from('messages').insert({
             instance_id: instanceId,
@@ -193,7 +203,9 @@ async function handleQRMessage(sock, msg, instanceId) {
             remote_jid: remoteJid,
             direction: 'INBOUND',
             message_type: 'text',
-            content: text
+            content: processedText,
+            content_original: translationResult.original,
+            translation_model: translationResult.model || 'none'
         }).then(({ error }) => {
             if (error) console.warn(`⚠️ [${instanceId}] Error logging inbound message:`, error.message);
         });
@@ -244,17 +256,25 @@ async function handleQRMessage(sock, msg, instanceId) {
             history = conversationMemory.get(memKey) || [];
         }
 
-        history.push({ role: 'user', content: text });
+        history.push({ role: 'user', content: processedText });
         // Although we limit to 10 DB, memory fallback can keep up to 20
         if (history.length > 20) history = history.slice(-20);
 
+        // --- Check if Human manually paused this lead ---
+        if (pausedLeads.get(memKey)) {
+            console.log(`⏸️ [${config.companyName}] Bot en pausa manual para ${remoteJid}. Ignorando IA.`);
+            return; // Exit early, message is already saved in DB for reading.
+        }
+
         const result = await alexBrain.generateResponse({
-            message: text,
+            message: processedText,
             history: history,
             botConfig: {
                 bot_name: config.companyName,
                 system_prompt: config.customPrompt || 'Eres ALEX IO, asistente virtual inteligente.',
-                voice: config.voice
+                voice: config.voice,
+                tenantId: config.tenantId,
+                instanceId: instanceId
             },
             isAudio: isAudioMessage
         });
@@ -265,23 +285,83 @@ async function handleQRMessage(sock, msg, instanceId) {
             conversationMemory.set(memKey, history);
         }
 
-        // --- Lead Extraction Trigger (Background) ---
-        const lowerText = text.toLowerCase();
-        const isTrigger = lowerText.match(/(comprar|precio|costo|agendar|cita|quiero|info|contacto|hablar|humano)/) || (history.filter(h => h.role === 'user').length % 4 === 0);
+        // --- Handle Limiters (Bot Paused) ---
+        if (result.botPaused) {
+            console.log(`⏸️ [${config.companyName}] AI Limiter Triggered for ${remoteJid}`);
+            await sock.sendMessage(remoteJid, { text: result.text });
+            return; // Halt further processing (CRM Sync, audio, logic)
+        }
 
-        if (isTrigger && (config.hubspotAccessToken || (config.copperApiKey && config.copperUserEmail))) {
+        // --- Lead Extraction & Webhooks (Background) ---
+        const lowerText = processedText.toLowerCase();
+        const intentTriggers = /(comprar|precio|costo|agendar|cita|quiero|info|contacto|hablar|humano|mail|correo|arroba)/;
+        const shouldExtract = lowerText.match(intentTriggers) || (history.filter(h => h.role === 'user').length % 4 === 0);
+
+        if (shouldExtract) {
             alexBrain.extractLeadInfo({ history, systemPrompt: config.customPrompt })
-                .then(lead => {
+                .then(async (lead) => {
                     if (lead && lead.isLead) {
                         const phoneStr = remoteJid.split('@')[0];
-                        if (config.hubspotAccessToken) {
-                            hubspotService.syncContact(phoneStr, lead, config.hubspotAccessToken);
+                        let enrichedLead = { ...lead, phone: phoneStr, instanceId, tenantId, email_status: "unverified" };
+
+                        // --- IDENTITY VALIDATION (ZeroBounce) ---
+                        if (lead.email && process.env.ZEROBOUNCE_API_KEY) {
+                            try {
+                                console.log(`🔍 [${config.companyName}] Validando email con ZeroBounce: ${lead.email}`);
+                                const zbRes = await axios.get(`https://api.zerobounce.net/v2/validate`, {
+                                    params: { api_key: process.env.ZEROBOUNCE_API_KEY, email: lead.email, ip_address: '' },
+                                    timeout: 3000 // Timeout corto para no trabar
+                                });
+                                const status = zbRes.data.status;
+                                if (status === 'valid') enrichedLead.email_status = 'verified';
+                                else if (status === 'invalid' || status === 'spamtrap') enrichedLead.email_status = 'risky';
+                                else enrichedLead.email_status = 'unknown';
+                            } catch (e) {
+                                console.warn(`⚠️ [${config.companyName}] Error en ZeroBounce, usando Fallback:`, e.message);
+                                enrichedLead.email_status = 'failed_vendor';
+                            }
                         }
+
+
+                        // 1. Hubspot
+                        if (config.hubspotAccessToken) {
+                            hubspotService.syncContact(phoneStr, lead, config.hubspotAccessToken).catch(e => console.error('HW Error', e.message));
+                        }
+                        // 2. Copper
                         if (config.copperApiKey && config.copperUserEmail) {
-                            copperService.syncContact(phoneStr, lead, { apiKey: config.copperApiKey, userEmail: config.copperUserEmail });
+                            copperService.syncContact(phoneStr, lead, { apiKey: config.copperApiKey, userEmail: config.copperUserEmail }).catch(e => console.error('CW Error', e.message));
+                        }
+                        // 3. GoHighLevel (GHL API v2)
+                        if (config.ghlApiKey) {
+                            try {
+                                // Basic GHL Upsert Contact
+                                await axios.post('https://services.leadconnectorhq.com/contacts/upsert', {
+                                    name: lead.name !== 'desconocido' ? lead.name : undefined,
+                                    email: lead.email,
+                                    phone: phoneStr,
+                                    tags: ["alex-io-bot", `temp:${lead.temperature}`],
+                                    customFields: [{ id: "summary", key: "summary", field_value: lead.summary }]
+                                }, {
+                                    headers: {
+                                        'Authorization': `Bearer ${config.ghlApiKey}`,
+                                        'Version': '2021-07-28',
+                                        'Content-Type': 'application/json'
+                                    }
+                                });
+                            } catch (err) {
+                                console.error(`⚠️ [GHL Error] ${config.companyName}:`, err.response?.data || err.message);
+                            }
+                        }
+                        // 4. Generic Webhook (Zapier/Make)
+                        if (config.webhookUrl) {
+                            try {
+                                await axios.post(config.webhookUrl, enrichedLead, { timeout: 5000 });
+                            } catch (err) {
+                                console.warn(`⚠️ [Webhook Error] ${config.companyName}: falló envío a ${config.webhookUrl}`);
+                            }
                         }
                     }
-                }).catch(err => console.error(`⚠️ [CRM Sync Error] ${config.companyName}:`, err.message));
+                }).catch(err => console.error(`⚠️ [Extraction Error] ${config.companyName}:`, err.message));
         }
 
         console.log(`🤖 [${config.companyName}] AI Result:`, !!result.text, 'Audio:', !!result.audioBuffer);
@@ -297,7 +377,7 @@ async function handleQRMessage(sock, msg, instanceId) {
             }
 
             if (tenantId && isSupabaseEnabled) {
-                // Log outbound message
+                // Log outbound message and run Shadow Audit
                 const msgContent = result.audioBuffer ? `[AUDIO] ${result.text}` : result.text;
 
                 supabase.from('messages').insert({
@@ -307,7 +387,21 @@ async function handleQRMessage(sock, msg, instanceId) {
                     direction: 'OUTBOUND',
                     message_type: result.audioBuffer ? 'audio' : 'text',
                     content: msgContent
-                }).then(() => null);
+                }).select().then(({ data, error }) => {
+                    if (!error && data && data.length > 0) {
+                        const messageId = data[0].id;
+                        // Trigger async shadow compliance audit (doesn't block response)
+                        alexBrain.runComplianceAudit({
+                            messageContent: processedText, // User's message (translated if needed)
+                            aiResponse: result.text,       // AI's generated response
+                            systemPrompt: config.customPrompt,
+                            tenantId,
+                            instanceId,
+                            messageId,
+                            supabase
+                        }).catch(e => console.error('Shadow Audit unhandled rejection:', e));
+                    }
+                });
 
                 // Increment Usage
                 const tokenUsage = result.trace?.usage?.totalTokens || 150;
@@ -515,7 +609,7 @@ async function connectToWhatsApp(instanceId, config, res = null) {
 
 // --- ENDPOINTS ---
 router.post('/connect', async (req, res) => {
-    const { companyName, customPrompt, voice, hubspotAccessToken, copperApiKey, copperUserEmail, provider = 'baileys', metaApiUrl, metaPhoneNumberId, metaAccessToken, dialogApiKey } = req.body || {};
+    const { companyName, customPrompt, voice, maxWords, maxMessages, hubspotAccessToken, copperApiKey, copperUserEmail, provider = 'baileys', metaApiUrl, metaPhoneNumberId, metaAccessToken, dialogApiKey } = req.body || {};
     const cleanName = String(companyName || '').trim();
 
     if (!cleanName) {
@@ -528,6 +622,8 @@ router.post('/connect', async (req, res) => {
         companyName: cleanName,
         customPrompt,
         voice: voice || 'nova',
+        maxWords: maxWords || 50,
+        maxMessages: maxMessages || 10,
         hubspotAccessToken: hubspotAccessToken || '',
         copperApiKey: copperApiKey || '',
         copperUserEmail: copperUserEmail || '',
@@ -618,7 +714,15 @@ router.post('/config/:instanceId', async (req, res) => {
 
     if (!current) return res.status(404).json({ error: 'Instance not found' });
 
-    const nextConfig = { ...current, ...req.body };
+    // Explicit extraction to avoid injection of unwanted fields, incorporating limiters
+    const { maxWords, maxMessages, ...restBody } = req.body;
+    const nextConfig = {
+        ...current,
+        ...restBody,
+        maxWords: maxWords ?? current.maxWords ?? 50,
+        maxMessages: maxMessages ?? current.maxMessages ?? 10
+    };
+
     clientConfigs.set(instanceId, nextConfig);
 
     await updateSessionStatus(instanceId, 'configured', {
@@ -719,6 +823,52 @@ router.post('/webhook', async (req, res) => {
     }
 });
 
+// --- LIVE CHAT & MANUAL CONTROL ---
+router.post('/messages/send', async (req, res) => {
+    try {
+        const { instanceId, remoteJid, text } = req.body;
+        if (!instanceId || !remoteJid || !text) return res.status(400).json({ error: 'Faltan parámetros' });
+
+        const sock = activeSessions.get(instanceId);
+        if (!sock) return res.status(404).json({ error: 'WhatsApp no está en línea' });
+
+        await sock.sendMessage(remoteJid, { text });
+
+        const config = clientConfigs.get(instanceId) || {};
+        const tenantId = config.tenantId;
+
+        if (tenantId && isSupabaseEnabled) {
+            await supabase.from('messages').insert({
+                instance_id: instanceId,
+                tenant_id: tenantId,
+                remote_jid: remoteJid,
+                direction: 'OUTBOUND',
+                message_type: 'text',
+                content: text
+            });
+        }
+        res.json({ success: true, text });
+    } catch (err) {
+        console.error('❌ Error enviando mensaje manual:', err);
+        res.status(500).json({ error: 'Error del servidor enviando mensaje' });
+    }
+});
+
+router.post('/instance/:instanceId/pause', (req, res) => {
+    const { instanceId } = req.params;
+    const { remoteJid, paused } = req.body;
+    if (!remoteJid) return res.status(400).json({ error: 'Falta remoteJid' });
+
+    const key = `${instanceId}_${remoteJid}`;
+    if (paused) {
+        pausedLeads.set(key, true);
+    } else {
+        pausedLeads.delete(key);
+    }
+
+    res.json({ success: true, instanceId, remoteJid, paused });
+});
+
 router.get('/status', (req, res) => {
     const tenantId = req.tenant?.id;
     const isAdmin = req.tenant?.role === 'SUPERADMIN';
@@ -757,6 +907,69 @@ router.get('/status/:instanceId', (req, res) => {
         ...info,
         provider: info.provider || clientConfigs.get(instanceId)?.provider || 'baileys'
     });
+});
+
+// --- RAG: DOCUMENT KNOWLEDGE MANAGEMENT ---
+router.get('/knowledge/:instanceId', async (req, res) => {
+    const { instanceId } = req.params;
+    const tenantId = req.tenant?.id;
+    if (!tenantId) return res.status(403).json({ error: 'Autorización requerida' });
+
+    try {
+        const docs = await ragService.listDocuments(tenantId, instanceId);
+        res.json({ success: true, documents: docs });
+    } catch (err) {
+        console.error('❌ Error fetching knowledge docs:', err.message);
+        res.status(500).json({ error: 'Error del servidor' });
+    }
+});
+
+router.post('/knowledge/:instanceId/upload', upload.single('file'), async (req, res) => {
+    const { instanceId } = req.params;
+    const tenantId = req.tenant?.id;
+    if (!tenantId) return res.status(403).json({ error: 'Autorización requerida' });
+    if (!req.file) return res.status(400).json({ error: 'No se envió un archivo válido' });
+
+    try {
+        const fileBuffer = req.file.buffer;
+        const originalName = req.file.originalname;
+        let textContent = '';
+
+        if (originalName.toLowerCase().endsWith('.pdf')) {
+            const pdfData = await pdfParse(fileBuffer);
+            textContent = pdfData.text;
+        } else if (originalName.toLowerCase().endsWith('.txt')) {
+            textContent = fileBuffer.toString('utf-8');
+        } else {
+            return res.status(400).json({ error: 'Formato no soportado. Usa .pdf o .txt' });
+        }
+
+        if (!textContent.trim()) return res.status(400).json({ error: 'El archivo está vacío o no se pudo extraer texto' });
+
+        const result = await ragService.ingestDocument(tenantId, instanceId, originalName, textContent);
+        res.json({ success: true, ...result });
+
+    } catch (err) {
+        console.error('❌ Error processing document upload:', err);
+        res.status(500).json({ error: 'Error procesando el archivo para RAG' });
+    }
+});
+
+router.delete('/knowledge/:instanceId/:documentName', async (req, res) => {
+    const { instanceId, documentName } = req.params;
+    const tenantId = req.tenant?.id;
+    if (!tenantId) return res.status(403).json({ error: 'Autorización requerida' });
+
+    try {
+        const success = await ragService.deleteDocument(tenantId, instanceId, documentName);
+        if (success) {
+            res.json({ success: true, message: 'Documento borrado' });
+        } else {
+            res.status(500).json({ error: 'No se pudo eliminar de la base de datos' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: 'Error en el servidor al eliminar' });
+    }
 });
 
 // --- PHASE 3: METRICS AND RESTART RULES ---
@@ -1091,6 +1304,106 @@ ${dataContext}`;
     }
 });
 
+// --- AI PROMPT CO-PILOT ---
+router.post('/prompt-copilot', async (req, res) => {
+    try {
+        const tenantId = req.tenant?.id;
+        if (!tenantId) return res.status(403).json({ error: 'Autorización requerida' });
+
+        const { currentPrompt, instruction } = req.body;
+        if (!currentPrompt || !instruction) {
+            return res.status(400).json({ error: 'currentPrompt e instruction son requeridos' });
+        }
+
+        const copilotPrompt = `Eres un experto Ingeniero de Prompts (Prompt Engineer).
+Tu tarea es modificar y mejorar el siguiente System Prompt basado estrictamente en la instrucción del usuario.
+No respondas conversacionalmente, SOLO devuelve el texto del System Prompt actualizado y mejorado.
+Manten el formato y estructura original en la medida de lo posible, aplicando los cambios solicitados.
+
+PROMPT ACTUAL:
+"""
+${currentPrompt}
+"""
+
+INSTRUCCIÓN DE MEJORA:
+"${instruction}"
+
+NUEVO PROMPT:`;
+
+        const result = await alexBrain.generateResponse({
+            message: copilotPrompt,
+            history: [],
+            botConfig: {
+                bot_name: 'PromptCopilot',
+                system_prompt: 'Eres un Prompt Engineer experto. Devuelve únicamente el System Prompt modificado sin markdown extra.'
+            }
+        });
+
+        // Limpiar backticks si el LLM los pone
+        let newPrompt = (result.text || '').trim();
+        if (newPrompt.startsWith('\`\`\`')) {
+            newPrompt = newPrompt.replace(/^\`\`\`(markdown|text)?\n/, '').replace(/\n\`\`\`$/, '');
+        }
+
+        return res.json({ success: true, prompt: newPrompt });
+    } catch (err) {
+        console.error('❌ Error en Prompt Co-Pilot:', err.message);
+        return res.status(500).json({ error: 'Fallo al procesar la mejora del prompt' });
+    }
+});
+
+// --- PROMPT QA (VALIDACIÓN) ---
+router.post('/prompt-qa', async (req, res) => {
+    try {
+        const tenantId = req.tenant?.id;
+        if (!tenantId) return res.status(403).json({ error: 'Autorización requerida' });
+
+        const { prompt } = req.body;
+        if (!prompt) return res.status(400).json({ error: 'prompt es requerido' });
+
+        const qaPrompt = `Analiza críticamente el siguiente System Prompt destinado a un bot de WhatsApp de ventas/soporte.
+Evalúa:
+1. Claridad de objetivo
+2. Manejo de límites/alucinaciones
+3. Tono
+
+Devuelve SOLO un JSON estricto con:
+{
+  "score": número del 1 al 10,
+  "feedback": "string breve con 1 crítica constructiva o consejo",
+  "is_safe": boolean (false si pide dar tarjetas de crédito o hacer algo ilegal)
+}
+
+PROMPT A EVALUAR:
+"""
+${prompt}
+"""`;
+
+        const result = await alexBrain.generateResponse({
+            message: qaPrompt,
+            history: [],
+            botConfig: {
+                bot_name: 'PromptQA',
+                system_prompt: 'Eres un QA estricto de Prompts AI. Devuelve únicamente JSON válido.'
+            }
+        });
+
+        let parsed = null;
+        try {
+            const text = result.text.replace(/^\`\`\`(json)?\n/, '').replace(/\n\`\`\`$/, '').trim();
+            parsed = JSON.parse(text);
+        } catch {
+            // fallback
+            parsed = { score: 7, feedback: 'El prompt parece funcionar, pero asegúrate de probarlo.', is_safe: true };
+        }
+
+        return res.json({ success: true, qa: parsed });
+    } catch (err) {
+        console.error('❌ Error en Prompt QA:', err.message);
+        return res.status(500).json({ error: 'Fallo al evaluar el prompt' });
+    }
+});
+
 router.post('/prompt-versions', async (req, res) => {
     try {
         const tenantId = req.tenant?.id;
@@ -1154,6 +1467,103 @@ router.patch('/prompt-versions/:instanceId/:versionId/archive', async (req, res)
     } catch (error) {
         console.error('❌ Error archivando versión de prompt:', error.message);
         return res.status(500).json({ error: error.message || 'No se pudo archivar la versión' });
+    }
+});
+
+// --- BROADCAST (MARKETING / CAMPAÑAS MASIVAS) ---
+router.post('/broadcast', async (req, res) => {
+    try {
+        const tenantId = req.tenant?.id;
+        if (!tenantId) return res.status(403).json({ error: 'Autorización requerida' });
+
+        const { instanceId, phones, message } = req.body;
+        if (!instanceId || !phones || !Array.isArray(phones) || !message) {
+            return res.status(400).json({ error: 'instanceId, phones (array) y message son requeridos' });
+        }
+
+        const sessionPath = `${sessionsDir}/${instanceId}`;
+        const configPath = `${sessionPath}/config.json`;
+
+        if (!fs.existsSync(configPath)) {
+            return res.status(404).json({ error: 'Instancia no encontrada o inactiva' });
+        }
+
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+        // Asignar el envío asíncronamente en background
+        res.json({ success: true, message: `Iniciando broadcast a ${phones.length} números en segundo plano.`, queued: phones.length });
+
+        // Background Processor
+        (async () => {
+            console.log(`📣 [BROADCAST] Iniciando campaña para ${instanceId} a ${phones.length} destinatarios...`);
+            let successCount = 0;
+            let failCount = 0;
+
+            for (let i = 0; i < phones.length; i++) {
+                let rawPhone = String(phones[i]).replace(/\D/g, '');
+                if (!rawPhone) continue;
+
+                // For Baileys format
+                let jid = rawPhone.includes('@s.whatsapp.net') ? rawPhone : `${rawPhone}@s.whatsapp.net`;
+
+                try {
+                    if (config.provider === 'baileys') {
+                        const sock = global.whatsappSessions?.get(instanceId);
+                        if (!sock) throw new Error('Bot no conectado');
+                        await sock.sendMessage(jid, { text: message });
+                    } else if (config.provider === 'meta') {
+                        await axios.post(
+                            `${config.metaApiUrl}/${config.metaPhoneNumberId}/messages`,
+                            {
+                                messaging_product: 'whatsapp',
+                                to: rawPhone,
+                                type: 'text',
+                                text: { body: message }
+                            },
+                            { headers: { Authorization: `Bearer ${config.metaAccessToken}` } }
+                        );
+                    } else if (config.provider === '360dialog') {
+                        await axios.post(
+                            'https://waba-v2.360dialog.io/messages',
+                            {
+                                messaging_product: 'whatsapp',
+                                recipient_type: 'individual',
+                                to: rawPhone,
+                                type: 'text',
+                                text: { body: message }
+                            },
+                            { headers: { 'D360-API-KEY': config.dialogApiKey } }
+                        );
+                    }
+                    successCount++;
+                    console.log(`✅ [BROADCAST] ${instanceId} -> ${rawPhone}`);
+
+                    // Log in Supabase messages for tracking
+                    if (isSupabaseEnabled) {
+                        await supabase.from('messages').insert({
+                            instance_id: instanceId,
+                            tenant_id: tenantId,
+                            remote_jid: jid,
+                            direction: 'OUTBOUND',
+                            message_type: 'text',
+                            content: `[BROADCAST] ${message}`
+                        });
+                    }
+                } catch (err) {
+                    failCount++;
+                    console.warn(`⚠️ [BROADCAST] Error enviando a ${rawPhone}:`, err.message);
+                }
+
+                // Delay to avoid spam bans (random 2 - 5 seconds)
+                const delayMs = Math.floor(Math.random() * 3000) + 2000;
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+            console.log(`📣 [BROADCAST FINISHED] ${instanceId}: ${successCount} enviados, ${failCount} fallidos.`);
+        })();
+
+    } catch (err) {
+        console.error('❌ Error iniciando Broadcast:', err.message);
+        if (!res.headersSent) res.status(500).json({ error: 'Error interno en broadcast' });
     }
 });
 
