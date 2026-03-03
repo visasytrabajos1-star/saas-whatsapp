@@ -71,7 +71,7 @@ export default function Login() {
                     localStorage.setItem('demo_email', 'admin@alex.io');
                     localStorage.setItem('alex_io_role', 'SUPERADMIN');
                     setLoading(false);
-                    navigate('/admin');
+                    navigate('/superadmin');
                     window.location.reload(); // Force refresh to ensure routes grab the new Storage
                     return;
                 }
@@ -91,7 +91,7 @@ export default function Login() {
                 }
 
                 // Navegar sin recargar la página (mantiene la sesión de Supabase en memoria)
-                navigate((data.user?.user_metadata?.role === 'SUPERADMIN') ? '/admin' : '/dashboard');
+                navigate((data.user?.user_metadata?.role === 'SUPERADMIN') ? '/superadmin' : '/dashboard');
             }
         } catch (error) {
             console.error('Auth Error:', error);

@@ -171,7 +171,7 @@ function App() {
     return children;
   };
 
-  const defaultPath = session?.user?.role === 'SUPERADMIN' ? '/admin' : '/dashboard';
+  const defaultPath = session?.user?.role === 'SUPERADMIN' ? '/superadmin' : '/dashboard';
 
   return (
     <AuthProvider>
