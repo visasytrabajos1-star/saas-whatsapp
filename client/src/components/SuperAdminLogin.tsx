@@ -9,25 +9,38 @@ const SuperAdminLogin = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError('');
 
-        // Master Credentials Lockdown
-        if (email.trim().toLowerCase() === 'admin@alex.io' && password === 'AlexAdmin2026') {
-            setTimeout(() => {
-                localStorage.setItem('alex_io_token', 'master-superadmin-token-bypass');
-                localStorage.setItem('demo_email', 'admin@alex.io');
-                localStorage.setItem('alex_io_role', 'SUPERADMIN');
-                navigate('/superadmin');
-                window.location.reload();
-            }, 800);
-        } else {
-            setTimeout(() => {
-                setError('Credenciales de SuperAdmin Incorrectas.');
-                setLoading(false);
-            }, 500);
+        try {
+            const { getPreferredApiBase } = await import('../api.js');
+            const apiBase = getPreferredApiBase();
+            const resp = await fetch(`${apiBase}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email.trim().toLowerCase(), password })
+            });
+
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                throw new Error(errData.error || `Error ${resp.status}`);
+            }
+
+            const data = await resp.json();
+            if (data.role !== 'SUPERADMIN') {
+                throw new Error('Esta cuenta no tiene permisos de SuperAdmin.');
+            }
+
+            localStorage.setItem('alex_io_token', data.token);
+            localStorage.setItem('demo_email', email.trim().toLowerCase());
+            localStorage.setItem('alex_io_role', data.role);
+            navigate('/superadmin');
+            window.location.reload();
+        } catch (err: any) {
+            setError(err.message || 'Credenciales de SuperAdmin Incorrectas.');
+            setLoading(false);
         }
     };
 

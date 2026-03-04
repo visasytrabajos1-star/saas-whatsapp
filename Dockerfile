@@ -15,8 +15,8 @@ RUN npm run build
 FROM node:18-alpine
 WORKDIR /app/server
 
-# Instalar dependencias del sistema (FFmpeg para conversión de audio)
-RUN apk add --no-cache ffmpeg
+# Instalar dependencias del sistema (FFmpeg para audio, git para npm deps como baileys)
+RUN apk add --no-cache ffmpeg git
 
 # Copy server package files
 COPY server/package*.json ./
