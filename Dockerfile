@@ -1,5 +1,5 @@
 # Stage 1: Build the React Client
-FROM node:18-alpine as client-builder
+FROM node:20-alpine as client-builder
 WORKDIR /app/client
 
 # Copy client package files
@@ -12,7 +12,7 @@ RUN npm run build
 
 
 # Stage 2: Setup the Server
-FROM node:18-alpine
+FROM node:20-alpine
 WORKDIR /app/server
 
 # Instalar dependencias del sistema (FFmpeg para audio, git para npm deps como baileys)
