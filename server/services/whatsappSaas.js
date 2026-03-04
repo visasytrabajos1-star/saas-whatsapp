@@ -1803,38 +1803,67 @@ const restoreSessions = async () => {
             return;
         }
 
-        // 2. Buscar sesiones que estaban 'online' en el último estado
-        const { data: onlineSessions, error } = await supabase
+        // 2. Hydrate AI usage from Supabase (restore stats after restart)
+        try {
+            const { data: aiData } = await supabase.from('bot_ai_usage').select('*');
+            for (const row of aiData || []) {
+                botAiUsage.set(row.instance_id, {
+                    gemini: { count: row.gemini_count || 0, tokens: row.gemini_tokens || 0 },
+                    openai: { count: row.openai_count || 0, tokens: row.openai_tokens || 0 },
+                    deepseek: { count: row.deepseek_count || 0, tokens: row.deepseek_tokens || 0 },
+                    total_messages: row.total_messages || 0
+                });
+            }
+            console.log(`📊 [RECOVERY] AI usage hidratado: ${(aiData || []).length} bots.`);
+        } catch (e) {
+            console.warn('⚠️ [RECOVERY] No se pudo hidratar AI usage:', e.message);
+        }
+
+        // 3. Buscar TODAS las sesiones que deberían estar activas
+        //    (online + cualquier sesión reciente que pudo quedar disconnected por un deploy)
+        const { data: sessions, error } = await supabase
             .from(sessionsTable)
             .select('*')
-            .eq('status', 'online');
+            .in('status', ['online', 'connecting', 'disconnected'])
+            .order('updated_at', { ascending: false });
 
         if (error) {
-            console.warn('⚠️ [RECOVERY] No se pudieron buscar sesiones (esquema incompatible?):', error.message);
+            console.warn('⚠️ [RECOVERY] No se pudieron buscar sesiones:', error.message);
             return;
         }
 
-        console.log(`📡 [RECOVERY] Encontradas ${onlineSessions?.length || 0} sesiones para restaurar.`);
+        // Filter: only restore sessions updated in last 24 hours (skip truly dead ones)
+        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const restoreable = (sessions || []).filter(s => s.updated_at > cutoff);
 
-        for (const session of onlineSessions || []) {
+        console.log(`📡 [RECOVERY] Encontradas ${restoreable.length} sesiones para restaurar (de ${(sessions || []).length} totales).`);
+
+        // 4. Stagger reconnections (5 seconds between each bot)
+        for (let i = 0; i < restoreable.length; i++) {
+            const session = restoreable[i];
             const instanceId = session.instance_id;
-            const sessionPath = `${sessionsDir}/${instanceId}`;
+            const delay = i * 5000; // 5s between each bot
 
-            if (isSupabaseEnabled || fs.existsSync(sessionPath)) {
-                console.log(`✅ [RECOVERY] Restaurando bot: ${session.company_name} (${instanceId})`);
+            setTimeout(() => {
+                console.log(`✅ [RECOVERY] Restaurando bot ${i + 1}/${restoreable.length}: ${session.company_name} (${instanceId})`);
+                logBotEvent(instanceId, 'connection', `Auto-restore after server restart`);
+
                 const config = {
                     companyName: session.company_name,
                     tenantId: session.tenant_id,
                     ownerEmail: session.owner_email,
-                    provider: 'baileys'
+                    provider: session.provider || 'baileys'
                 };
                 connectToWhatsApp(instanceId, config).catch(e => {
                     console.error(`❌ [RECOVERY] Falló restauración de ${instanceId}:`, e.message);
+                    logBotEvent(instanceId, 'error', `Auto-restore failed: ${e.message}`);
                 });
-            } else {
-                console.warn(`⚠️ [RECOVERY] Saltando ${instanceId}: Carpeta de sesión no encontrada y Supabase está deshabilitado.`);
-                updateSessionStatus(instanceId, 'disconnected', { companyName: session.company_name }).catch(() => { });
-            }
+            }, delay);
+        }
+
+        if (restoreable.length > 0) {
+            const totalTime = (restoreable.length - 1) * 5;
+            console.log(`⏱️ [RECOVERY] Restauración escalonada: ${restoreable.length} bots en ~${totalTime}s`);
         }
     } catch (err) {
         console.error('❌ [RECOVERY] Error crítico en restauración:', err.message);
