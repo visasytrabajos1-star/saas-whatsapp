@@ -32,4 +32,4 @@ COPY --from=client-builder /app/client/dist /app/client/dist
 EXPOSE 3000
 
 # Start command
-CMD ["node", "index-minimal.js"]
+CMD ["node", "index.js"]
