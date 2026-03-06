@@ -225,6 +225,7 @@ app.get('/api/status', (req, res) => {
 
 // WhatsApp Routes (Protected & Rate Limited by Tenant)
 const { router: whatsappSaas, restoreSessions } = require('./services/whatsappSaas');
+app.post('/api/saas/connect', authenticateTenant, sensitiveLimiter); // Extra rate limit on connect
 app.use('/api/saas', authenticateTenant, tenantLimiter, whatsappSaas);
 
 // Payment Routes (Protected & Rate Limited by Tenant)

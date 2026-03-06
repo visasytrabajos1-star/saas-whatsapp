@@ -28,6 +28,10 @@ COPY server/ .
 # Copy built frontend assets from Stage 1
 COPY --from=client-builder /app/client/build /app/client/build
 
+# Production environment
+ENV NODE_ENV=production
+ENV ALLOW_MOCK_AUTH=false
+
 # Expose port
 EXPOSE 3000
 

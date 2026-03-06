@@ -4,16 +4,23 @@ const assert = require('node:assert/strict');
 let jwt;
 let authenticateTenant;
 let getJwtSecret;
+let loadError = null;
 
 try {
     jwt = require('jsonwebtoken');
     ({ authenticateTenant, getJwtSecret } = require('../middleware/auth'));
 } catch (error) {
-    test('auth middleware tests skipped: missing dependencies in environment', { skip: true }, () => {
-        assert.ok(error);
-    });
-    return;
+    loadError = error;
 }
+
+test('DEPENDENCY CHECK: auth middleware loads correctly', () => {
+    if (loadError) {
+        assert.fail(`Cannot run auth tests — missing dependency: ${loadError.message}. Run 'npm install' in the server directory.`);
+    }
+    assert.ok(jwt, 'jsonwebtoken loaded');
+    assert.ok(authenticateTenant, 'authenticateTenant loaded');
+    assert.ok(getJwtSecret, 'getJwtSecret loaded');
+});
 
 function createRes() {
     return {
