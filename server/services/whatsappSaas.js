@@ -1255,37 +1255,38 @@ router.get('/superadmin/clients', async (req, res) => {
             }
         } catch (_) { }
 
-        const { data: usage } = await supabase.from(usageTable).select('*');
-        const { data: bots } = await supabase.from(sessionsTable).select('instance_id, tenant_id, status, company_name, owner_email');
+        const usageData = usage || [];
+        const botsData = bots || [];
 
-        if (bots) {
-            bots.forEach(b => {
+        if (botsData.length > 0) {
+            botsData.forEach(b => {
                 const email = b.owner_email || b.tenant_id;
-                if (!mergedUsers.find(u => u.email === email || u.id === b.tenant_id)) {
+                if (email && !mergedUsers.find(u => u.email === email || u.id === b.tenant_id)) {
                     mergedUsers.push({ id: b.tenant_id, email: email, plan: 'FREE', role: 'USER' });
                 }
             });
         }
 
-        const allUsers = mergedUsers;
+        const allUsers = mergedUsers.filter(u => u && u.email);
         const clients = allUsers.map(u => {
-            const tId = `tenant_${Buffer.from(u.email).toString('base64').substring(0, 8)}`;
-            const userUsage = (usage || []).find(us => us.tenant_id === tId || us.tenant_id === u.id) || { messages_sent: 0, plan_limit: 0, tokens_consumed: 0 };
-            const userBots = (bots || []).filter(b => b.tenant_id === tId || b.tenant_id === u.id);
+            const emailStr = String(u.email || '');
+            const tId = emailStr ? `tenant_${Buffer.from(emailStr).toString('base64').substring(0, 8)}` : (u.id || 'unknown');
+            const userUsage = usageData.find(us => us.tenant_id === tId || us.tenant_id === u.id) || { messages_sent: 0, plan_limit: 0, tokens_consumed: 0 };
+            const userBots = botsData.filter(b => b.tenant_id === tId || b.tenant_id === u.id);
             return {
                 id: u.id,
                 tenant_id: tId,
                 email: u.email,
-                plan: u.plan,
-                role: u.role,
+                plan: u.plan || 'FREE',
+                role: u.role || 'USER',
                 usage: userUsage,
                 bots: userBots.map(b => ({
                     ...b,
-                    health_score: getBotHealthScore(b.instance_id),
-                    reconnect_attempts: reconnectAttempts.get(b.instance_id) || 0,
-                    ai_usage: botAiUsage.get(b.instance_id) || { gemini: { count: 0, tokens: 0 }, openai: { count: 0, tokens: 0 }, deepseek: { count: 0, tokens: 0 }, total_messages: 0 },
-                    last_error: (botEventLogs.get(b.instance_id) || []).filter(l => l.level === 'error').slice(-1)[0] || null,
-                    last_event: (botEventLogs.get(b.instance_id) || []).slice(-1)[0] || null
+                    health_score: typeof getBotHealthScore === 'function' ? getBotHealthScore(b.instance_id) : 100,
+                    reconnect_attempts: (reconnectAttempts && reconnectAttempts.get(b.instance_id)) || 0,
+                    ai_usage: (botAiUsage && botAiUsage.get(b.instance_id)) || { gemini: { count: 0, tokens: 0 }, openai: { count: 0, tokens: 0 }, deepseek: { count: 0, tokens: 0 }, total_messages: 0 },
+                    last_error: ((botEventLogs && botEventLogs.get(b.instance_id)) || []).filter(l => l.level === 'error').slice(-1)[0] || null,
+                    last_event: ((botEventLogs && botEventLogs.get(b.instance_id)) || []).slice(-1)[0] || null
                 }))
             };
         });
