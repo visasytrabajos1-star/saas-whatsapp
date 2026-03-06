@@ -100,9 +100,9 @@ const buildToken = (user) => {
     };
 };
 
-// POST /api/auth/session
+// POST /api/auth/session-exchange
 // Exchange a Supabase access_token for a backend JWT
-app.post('/api/auth/session', sensitiveLimiter, async (req, res) => {
+app.post('/api/auth/session-exchange', sensitiveLimiter, async (req, res) => {
     const { access_token } = req.body;
     if (!access_token) return res.status(400).json({ error: 'Supabase access_token is required' });
 
@@ -127,6 +127,12 @@ app.post('/api/auth/session', sensitiveLimiter, async (req, res) => {
 
 // Legacy login/register removed to enforce Supabase Auth.
 // Use Supabase Client SDK in frontend to login/signup.
+app.post('/api/auth/login', (req, res) => {
+    res.status(410).json({
+        error: 'Este endpoint está obsoletos (AUTH_DEPRECATED). Use Supabase Auth + /api/auth/session-exchange.',
+        code: 'AUTH_DEPRECATED'
+    });
+});
 
 // --- SERVE FRONTEND (Static files from client build) ---
 const path = require('path');

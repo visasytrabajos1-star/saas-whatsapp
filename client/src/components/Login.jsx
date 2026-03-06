@@ -82,7 +82,7 @@ export default function Login() {
                 try {
                     const { getPreferredApiBase } = await import('../api.js');
                     const apiBase = getPreferredApiBase();
-                    const resp = await fetch(`${apiBase}/api/auth/session`, {
+                    const resp = await fetch(`${apiBase}/api/auth/session-exchange`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ access_token: data.session.access_token })

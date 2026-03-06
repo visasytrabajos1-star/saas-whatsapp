@@ -54,10 +54,10 @@ const authenticateTenant = async (req, res, next) => {
 
             const isAdmin = ['visasytrabajos@gmail.com', 'admin@demo.com', 'admin@alex.io'].includes(user.email.toLowerCase());
             req.tenant = {
-                id: isAdmin ? 'tenant_superadmin' : `tenant_${Buffer.from(user.email).toString('base64').substring(0, 8)}`,
-                plan: isAdmin ? 'ENTERPRISE' : 'PRO',
+                id: isAdmin ? 'tenant_superadmin' : user.id, // Use Supabase UUID as immutable tenantId
+                plan: user.user_metadata?.plan || (isAdmin ? 'ENTERPRISE' : 'PRO'),
                 email: user.email,
-                role: isAdmin ? 'SUPERADMIN' : 'OWNER'
+                role: isAdmin ? 'SUPERADMIN' : (user.user_metadata?.role || 'OWNER')
             };
             return next();
         }
