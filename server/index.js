@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const pino = require('pino');
+const helmet = require('helmet');
 
 // --- CONFIGURATION ---
 const app = express();
@@ -44,6 +45,7 @@ const sensitiveLimiter = rateLimit({
 });
 
 app.use(globalLimiter);
+app.use(helmet());
 
 // Middleware
 app.use(cors());
