@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, Component } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Activity, Settings, Smartphone, Plus, Loader, AlertTriangle, CheckCircle2, X, Wand2, LogOut, MessageCircle, Send, Globe, Book, Sparkles } from 'lucide-react';
+import { Shield, Activity, Settings, Smartphone, Plus, Loader, AlertTriangle, CheckCircle2, X, Wand2, LogOut, MessageCircle, Send, Globe, Book, Sparkles, Sun, Moon } from 'lucide-react';
 import PromptWizard from './PromptWizard';
 import PromptCopilot from './PromptCopilot';
 import LiveChat from './LiveChat';
@@ -21,6 +21,28 @@ if (typeof document !== 'undefined' && !document.getElementById('dm-sans-font'))
   link.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap';
   document.head.appendChild(link);
 }
+
+// --- THEME SYSTEM ---
+const themes = {
+  dark: {
+    bg: '#0e0e16', bgAlt: '#0a0a12', card: '#16161e', border: '#2a2a3a',
+    text: '#e2e8f0', textMuted: '#64748b', textDim: '#94a3b8',
+    accent: '#6366f1', accentHover: '#818cf8', accentBg: 'rgba(99,102,241,0.15)', accentBorder: 'rgba(99,102,241,0.3)',
+    inputBg: '#0e0e16', inputBorder: '#2a2a3a',
+    modalBg: '#16161e', modalOverlay: 'rgba(0,0,0,0.8)',
+    footerBg: 'rgba(10,10,18,0.9)', footerBorder: '#1e1e2e',
+    noticeText: '#e2e8f0',
+  },
+  light: {
+    bg: '#f8fafc', bgAlt: '#ffffff', card: '#ffffff', border: '#e2e8f0',
+    text: '#1e293b', textMuted: '#64748b', textDim: '#475569',
+    accent: '#6366f1', accentHover: '#4f46e5', accentBg: 'rgba(99,102,241,0.08)', accentBorder: 'rgba(99,102,241,0.25)',
+    inputBg: '#f1f5f9', inputBorder: '#cbd5e1',
+    modalBg: '#ffffff', modalOverlay: 'rgba(0,0,0,0.4)',
+    footerBg: 'rgba(255,255,255,0.95)', footerBorder: '#e2e8f0',
+    noticeText: '#1e293b',
+  }
+};
 
 const PROVIDERS = [
   { value: 'baileys', label: 'Baileys (QR)' },
@@ -64,6 +86,9 @@ class ErrorBoundary extends Component {
 
 function SaasDashboard() {
   const { t, i18n } = useTranslation();
+  const [isDark, setIsDark] = useState(() => (localStorage.getItem('alex_theme') || 'dark') === 'dark');
+  const T = isDark ? themes.dark : themes.light;
+  const toggleTheme = () => { const next = !isDark; setIsDark(next); localStorage.setItem('alex_theme', next ? 'dark' : 'light'); };
 
   const userEmail = localStorage.getItem('demo_email') || 'user@app.com';
   const userRole = localStorage.getItem('alex_io_role') || 'OWNER';
@@ -504,12 +529,12 @@ function SaasDashboard() {
   };
 
   return (
-    <div className="min-h-screen text-white" style={{ background: '#0e0e16', fontFamily: "'DM Sans', sans-serif" }}>
+    <div className="min-h-screen" style={{ background: T.bg, color: T.text, fontFamily: "'DM Sans', sans-serif" }}>
 
       {/* New Bot Modal */}
       {showNewBotModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-sm">
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: T.modalOverlay }}>
+          <div className="rounded-xl p-6 w-full max-w-sm" style={{ background: T.card, border: `1px solid ${T.border}` }}>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">Nuevo Bot</h3>
               <button onClick={() => setShowNewBotModal(false)} className="text-slate-400 hover:text-white">
@@ -518,9 +543,10 @@ function SaasDashboard() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Nombre del Bot</label>
+                <label className="block text-sm mb-1" style={{ color: T.textMuted }}>Nombre del Bot</label>
                 <input
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white"
+                  className="w-full rounded p-2"
+                  style={{ background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text }}
                   placeholder="Ej: Mi Tienda Online"
                   value={newBotName}
                   onChange={(e) => setNewBotName(e.target.value)}
@@ -529,9 +555,10 @@ function SaasDashboard() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Canal WhatsApp</label>
+                <label className="block text-sm mb-1" style={{ color: T.textMuted }}>Canal WhatsApp</label>
                 <select
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white"
+                  className="w-full rounded p-2"
+                  style={{ background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text }}
                   value={newBotProvider}
                   onChange={(e) => setNewBotProvider(e.target.value)}
                 >
@@ -551,8 +578,8 @@ function SaasDashboard() {
       )}
 
       {qrCode && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div className="bg-slate-800 p-8 rounded-xl text-center max-w-sm w-full">
+        <div className="fixed inset-0 flex items-center justify-center z-50" style={{ background: T.modalOverlay }}>
+          <div className="p-8 rounded-xl text-center max-w-sm w-full" style={{ background: T.card, border: `1px solid ${T.border}` }}>
             <h2 className="text-2xl font-bold mb-4">Escanea el QR</h2>
             <img src={qrCode} alt="QR" className="border-4 border-white p-2 rounded mb-4 mx-auto" />
             <button onClick={() => setQrCode(null)} className="text-blue-500">Cerrar</button>
@@ -560,23 +587,27 @@ function SaasDashboard() {
         </div>
       )}
 
-      <header className="border-b p-4 flex justify-between items-center" style={{ background: '#0a0a12', borderColor: '#1e1e2e' }}>
+      <header className="border-b p-4 flex justify-between items-center" style={{ background: T.bgAlt, borderColor: T.border }}>
         <div className="flex items-center gap-3">
           <Shield className="text-indigo-400" size={28} />
           <h1 className="text-2xl font-bold">ALEX <span className="text-indigo-400">IO</span></h1>
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#818cf8' }}>{VERSION}</span>
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={toggleTheme} className="p-2 rounded-lg transition-all hover:scale-110" style={{ background: T.card, border: `1px solid ${T.border}` }} title={isDark ? 'Modo Claro' : 'Modo Oscuro'}>
+            {isDark ? <Sun size={16} style={{ color: '#f59e0b' }} /> : <Moon size={16} style={{ color: '#6366f1' }} />}
+          </button>
           <div className="text-right hidden sm:block">
-            <p className="text-xs text-slate-400">{userEmail}</p>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">{userRole === 'SUPERADMIN' ? '⭐ Admin' : '👤 Cliente'}</p>
+            <p className="text-xs" style={{ color: T.textMuted }}>{userEmail}</p>
+            <p className="text-[10px] uppercase tracking-wider font-bold" style={{ color: T.textDim }}>{userRole === 'SUPERADMIN' ? '⭐ Admin' : '👤 Cliente'}</p>
           </div>
 
           {/* Language Switcher */}
-          <div className="relative group flex items-center gap-1 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-slate-800 transition-colors">
-            <Globe size={16} className="text-slate-400 group-hover:text-white" />
+          <div className="relative group flex items-center gap-1 px-3 py-1.5 rounded-lg cursor-pointer transition-colors" style={{ background: T.card, border: `1px solid ${T.border}` }}>
+            <Globe size={16} style={{ color: T.textMuted }} />
             <select
-              className="bg-transparent text-sm text-slate-300 font-bold focus:outline-none cursor-pointer appearance-none pl-1 pr-3"
+              className="bg-transparent text-sm font-bold focus:outline-none cursor-pointer appearance-none pl-1 pr-3"
+              style={{ color: T.textDim }}
               value={i18n.language}
               onChange={(e) => i18n.changeLanguage(e.target.value)}
             >
@@ -598,7 +629,8 @@ function SaasDashboard() {
               localStorage.removeItem('alex_io_tenant');
               window.location.href = '/#/login';
             }}
-            className="text-slate-400 hover:text-red-400 transition-colors p-2"
+            className="hover:text-red-400 transition-colors p-2"
+            style={{ color: T.textMuted }}
             title="Cerrar sesión"
           >
             <LogOut size={18} />
@@ -615,31 +647,31 @@ function SaasDashboard() {
       )}
 
       <main className="flex h-[calc(100vh-64px)]">
-        <aside className="w-64 border-r p-4 flex flex-col" style={{ background: '#0a0a12', borderColor: '#1e1e2e' }}>
-          <div className="mb-6 rounded-xl p-4" style={{ background: '#16161e', border: '1px solid #2a2a3a' }}>
-            <h2 className="text-[10px] font-bold uppercase tracking-widest flex justify-between items-center mb-2" style={{ color: '#64748b' }}>
+        <aside className="w-64 border-r p-4 flex flex-col" style={{ background: T.bgAlt, borderColor: T.border }}>
+          <div className="mb-6 rounded-xl p-4" style={{ background: T.card, border: `1px solid ${T.border}` }}>
+            <h2 className="text-[10px] font-bold uppercase tracking-widest flex justify-between items-center mb-2" style={{ color: T.textMuted }}>
               Uso del Plan
-              <span style={{ color: '#818cf8' }}>{usage.messages_sent} / {usage.plan_limit}</span>
+              <span style={{ color: T.accentHover }}>{usage.messages_sent} / {usage.plan_limit}</span>
             </h2>
-            <div className="w-full rounded-full h-1.5 mb-2 overflow-hidden" style={{ background: '#2a2a3a' }}>
+            <div className="w-full rounded-full h-1.5 mb-2 overflow-hidden" style={{ background: T.border }}>
               <div className="h-1.5 rounded-full transition-all" style={{ width: `${Math.min((usage.messages_sent / Math.max(usage.plan_limit, 1)) * 100, 100)}%`, background: `linear-gradient(90deg, #6366f1, ${usage.messages_sent / Math.max(usage.plan_limit, 1) > 0.8 ? '#ef4444' : '#f59e0b'})` }}></div>
             </div>
-            <p className="text-[10px] text-right" style={{ color: '#64748b' }}>
+            <p className="text-[10px] text-right" style={{ color: T.textMuted }}>
               {usage.tokens_consumed ? `${(usage.tokens_consumed / 1000).toFixed(1)}k tokens` : '0 tokens'}
             </p>
           </div>
 
-          <h2 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: '#64748b' }}>{t('dashboard.myBots', 'Mis Bots')}</h2>
+          <h2 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: T.textMuted }}>{t('dashboard.myBots', 'Mis Bots')}</h2>
           <div className="space-y-2 flex-1 overflow-auto">
             {instances.map((inst) => (
               <button key={inst.id} onClick={() => setSelected(inst)} className="w-full text-left p-3 rounded-xl flex items-center justify-between transition-all"
                 style={{
-                  background: selected?.id === inst.id ? 'rgba(99,102,241,0.15)' : '#16161e',
-                  border: `1px solid ${selected?.id === inst.id ? '#6366f1' : '#2a2a3a'}`,
+                  background: selected?.id === inst.id ? T.accentBg : T.card,
+                  border: `1px solid ${selected?.id === inst.id ? T.accent : T.border}`,
                 }}>
                 <div>
-                  <div className="font-medium text-sm" style={{ color: '#e2e8f0' }}>{inst.name}</div>
-                  <div className="text-xs" style={{ color: '#64748b' }}>{inst.phone}</div>
+                  <div className="font-medium text-sm" style={{ color: T.text }}>{inst.name}</div>
+                  <div className="text-xs" style={{ color: T.textMuted }}>{inst.phone}</div>
                 </div>
                 <div className="relative">
                   <div className={`w-2.5 h-2.5 rounded-full ${inst.status === 'online' ? 'bg-green-500' : inst.status === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'}`} />
@@ -651,7 +683,7 @@ function SaasDashboard() {
           <button
             onClick={() => setShowNewBotModal(true)}
             className="w-full mt-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02]"
-            style={{ background: '#16161e', border: '1px solid #2a2a3a', color: '#94a3b8' }}
+            style={{ background: T.card, border: `1px solid ${T.border}`, color: T.textDim }}
           >
             <Plus size={20} /> {t('dashboard.createNewBot', 'Añadir Nuevo')}
           </button>
@@ -661,7 +693,7 @@ function SaasDashboard() {
           {selected ? (
             <div className="flex flex-col h-full w-full max-w-7xl mx-auto">
               {/* Tabs */}
-              <div className="flex gap-1 mb-4 pb-2 flex-shrink-0 overflow-x-auto" style={{ borderBottom: '1px solid #2a2a3a' }}>
+              <div className="flex gap-1 mb-4 pb-2 flex-shrink-0 overflow-x-auto" style={{ borderBottom: `1px solid ${T.border}` }}>
                 {[
                   { key: 'config', icon: <Settings size={15} />, label: 'Configuración', color: '#6366f1' },
                   { key: 'rag', icon: <Book size={15} />, label: 'Conocimiento', color: '#6366f1' },
@@ -673,7 +705,7 @@ function SaasDashboard() {
                     className="font-bold pb-2 px-3 border-b-2 transition-all flex items-center gap-2 text-sm whitespace-nowrap"
                     style={{
                       borderColor: activeTab === tab.key ? tab.color : 'transparent',
-                      color: activeTab === tab.key ? tab.color : '#64748b',
+                      color: activeTab === tab.key ? tab.color : T.textMuted,
                     }}>
                     {tab.icon} {tab.label}
                   </button>
@@ -689,6 +721,7 @@ function SaasDashboard() {
                     onSave={handleSaveConfig}
                     analytics={analytics}
                     connectionStatus={selected?.status}
+                    theme={T}
                   />
                 </div>
               ) : activeTab === 'chat' ? (
@@ -710,7 +743,7 @@ function SaasDashboard() {
               ) : null}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center h-full" style={{ color: '#64748b' }}>
+            <div className="flex flex-col items-center justify-center h-full" style={{ color: T.textMuted }}>
               <Smartphone size={64} className="mb-4 opacity-20" />
               <p className="text-lg font-medium mb-2">Selecciona un bot</p>
               <p className="text-sm">del panel lateral para administrar su configuración.</p>
@@ -719,7 +752,7 @@ function SaasDashboard() {
         </div>
       </main>
 
-      <footer className="fixed bottom-2 right-3 text-[11px] px-2 py-1 rounded flex items-center gap-2" style={{ background: 'rgba(10,10,18,0.9)', border: '1px solid #1e1e2e', color: '#64748b' }}>
+      <footer className="fixed bottom-2 right-3 text-[11px] px-2 py-1 rounded flex items-center gap-2" style={{ background: T.footerBg, border: `1px solid ${T.footerBorder}`, color: T.textMuted }}>
         <span className="font-bold" style={{ color: '#818cf8' }}>{VERSION}</span>
         <span>Hardened | V8 Multi-Tenancy | API: {apiDebugUrl}</span>
       </footer>
@@ -759,7 +792,7 @@ function SaasDashboard() {
       {/* Floating AI Support Chat */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
         {isSupportOpen && (
-          <div className="rounded-xl shadow-2xl mb-4 w-80 h-96 flex flex-col overflow-hidden" style={{ background: '#16161e', border: '1px solid #2a2a3a' }}>
+          <div className="rounded-xl shadow-2xl mb-4 w-80 h-96 flex flex-col overflow-hidden" style={{ background: T.card, border: `1px solid ${T.border}` }}>
             <div className="p-3 text-white flex justify-between items-center" style={{ background: 'linear-gradient(135deg, #6366f1, #7c3aed)' }}>
               <div className="flex items-center gap-2">
                 <Wand2 size={16} />
@@ -769,18 +802,18 @@ function SaasDashboard() {
                 <X size={18} />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ background: '#0e0e16' }}>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ background: T.bg }}>
               {supportMessages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[85%] rounded-lg p-2 text-sm ${msg.role === 'user' ? 'text-white rounded-br-none' : 'text-slate-200 rounded-bl-none'}`}
-                    style={msg.role === 'user' ? { background: '#6366f1' } : { background: '#16161e', border: '1px solid #2a2a3a' }}>
+                    style={msg.role === 'user' ? { background: T.accent } : { background: T.card, border: `1px solid ${T.border}` }}>
                     {msg.content}
                   </div>
                 </div>
               ))}
               {isSupportTyping && (
                 <div className="flex justify-start">
-                  <div className="rounded-lg rounded-bl-none p-2 text-xs flex gap-1 items-center" style={{ background: '#16161e', border: '1px solid #2a2a3a', color: '#64748b' }}>
+                  <div className="rounded-lg rounded-bl-none p-2 text-xs flex gap-1 items-center" style={{ background: T.card, border: `1px solid ${T.border}`, color: T.textMuted }}>
                     <span className="animate-bounce">●</span>
                     <span className="animate-bounce delay-75">●</span>
                     <span className="animate-bounce delay-150">●</span>
@@ -788,10 +821,10 @@ function SaasDashboard() {
                 </div>
               )}
             </div>
-            <form onSubmit={handleSendSupportMessage} className="p-2 flex gap-2" style={{ borderTop: '1px solid #2a2a3a', background: '#16161e' }}>
+            <form onSubmit={handleSendSupportMessage} className="p-2 flex gap-2" style={{ borderTop: `1px solid ${T.border}`, background: T.card }}>
               <input type="text" value={supportInput} onChange={e => setSupportInput(e.target.value)} placeholder="Escribe tu duda..."
                 className="flex-1 rounded-full px-3 py-1.5 text-sm focus:outline-none"
-                style={{ background: '#0e0e16', border: '1px solid #2a2a3a', color: '#e2e8f0' }} />
+                style={{ background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text }} />
               <button type="submit" disabled={!supportInput.trim() || isSupportTyping}
                 className="disabled:opacity-50 text-white rounded-full p-2 transition-colors flex items-center justify-center"
                 style={{ background: '#6366f1' }}>

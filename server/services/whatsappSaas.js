@@ -1750,7 +1750,7 @@ router.post('/broadcast', async (req, res) => {
         const tenantId = req.tenant?.id;
         if (!tenantId) return res.status(403).json({ error: 'Autorización requerida' });
 
-        const { instanceId, phones, message } = req.body;
+        const { instanceId, phones, message, mediaUrl, mediaType } = req.body;
         if (!instanceId || !phones || !Array.isArray(phones) || !message) {
             return res.status(400).json({ error: 'instanceId, phones (array) y message son requeridos' });
         }
@@ -1784,7 +1784,23 @@ router.post('/broadcast', async (req, res) => {
                     if (config.provider === 'baileys') {
                         const sock = global.whatsappSessions?.get(instanceId);
                         if (!sock) throw new Error('Bot no conectado');
-                        await sock.sendMessage(jid, { text: message });
+                        let msgPayload = { text: message };
+                        if (mediaUrl) {
+                            if (mediaType === 'audio') {
+                                msgPayload = { audio: { url: mediaUrl }, ptt: true, mimetype: 'audio/mp4' };
+                                // Audio messages can't have captions in WA, so we send the text separately before the audio just in case
+                                if (message && message !== '') { // only send if there is text, although validation says message is required
+                                    await sock.sendMessage(jid, { text: message });
+                                }
+                            } else if (mediaType === 'video') {
+                                msgPayload = { video: { url: mediaUrl }, caption: message };
+                            } else if (mediaType === 'document') {
+                                msgPayload = { document: { url: mediaUrl }, mimetype: 'application/pdf', fileName: 'archivo.pdf', caption: message };
+                            } else {
+                                msgPayload = { image: { url: mediaUrl }, caption: message };
+                            }
+                        }
+                        await sock.sendMessage(jid, msgPayload);
                     } else if (config.provider === 'meta') {
                         await axios.post(
                             `${config.metaApiUrl}/${config.metaPhoneNumberId}/messages`,
@@ -1820,7 +1836,7 @@ router.post('/broadcast', async (req, res) => {
                             remote_jid: jid,
                             direction: 'OUTBOUND',
                             message_type: 'text',
-                            content: `[BROADCAST] ${message}`
+                            content: `[BROADCAST] ${mediaUrl ? `[Media: ${mediaType}] ` : ''}${message}`
                         });
                     }
                 } catch (err) {
@@ -1828,8 +1844,8 @@ router.post('/broadcast', async (req, res) => {
                     console.warn(`⚠️ [BROADCAST] Error enviando a ${rawPhone}:`, err.message);
                 }
 
-                // Delay to avoid spam bans (random 2 - 5 seconds)
-                const delayMs = Math.floor(Math.random() * 3000) + 2000;
+                // Delay to avoid spam bans (40 seconds as tested by user)
+                const delayMs = 40000;
                 await new Promise(resolve => setTimeout(resolve, delayMs));
             }
             console.log(`📣 [BROADCAST FINISHED] ${instanceId}: ${successCount} enviados, ${failCount} fallidos.`);

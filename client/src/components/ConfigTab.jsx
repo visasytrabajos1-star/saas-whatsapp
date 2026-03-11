@@ -1,24 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Zap, MessageSquare, Clock, Shield, ChevronRight, ChevronLeft, Sparkles, Copy, Check, Play, HelpCircle, ExternalLink, Loader2, Volume2, Key, Globe, Users, BarChart3, Wifi, WifiOff, Star, ArrowRight } from 'lucide-react';
 
-// ─── Color Tokens ──────────────────────────────────────────────
-const C = {
-    bg: '#0e0e16',
-    surface: '#16161e',
-    surfaceHover: '#1e1e2a',
-    border: '#2a2a3a',
-    borderActive: '#6366f1',
-    indigo: '#6366f1',
-    indigoHover: '#818cf8',
-    indigoDim: 'rgba(99,102,241,0.12)',
+// ─── Color Tokens (derived from parent theme or default dark) ─
+const makeTokens = (theme) => ({
+    bg: theme?.bg || '#0e0e16',
+    surface: theme?.card || '#16161e',
+    surfaceHover: theme?.card ? (theme.bg === '#f8fafc' ? '#f1f5f9' : '#1e1e2a') : '#1e1e2a',
+    border: theme?.border || '#2a2a3a',
+    borderActive: theme?.accent || '#6366f1',
+    indigo: theme?.accent || '#6366f1',
+    indigoHover: theme?.accentHover || '#818cf8',
+    indigoDim: theme?.accentBg || 'rgba(99,102,241,0.12)',
     amber: '#f59e0b',
     amberDim: 'rgba(245,158,11,0.12)',
     green: '#22c55e',
     red: '#ef4444',
-    text: '#e2e8f0',
-    textMuted: '#94a3b8',
-    textDim: '#64748b',
-};
+    text: theme?.text || '#e2e8f0',
+    textMuted: theme?.textDim || '#94a3b8',
+    textDim: theme?.textMuted || '#64748b',
+});
 
 // ─── Business Type Cards ───────────────────────────────────────
 const BUSINESS_TYPES = [
@@ -114,7 +114,8 @@ function FloatingSupport() {
 // ═══════════════════════════════════════════════════════════════
 // ██  CONFIGTAB — Main Component
 // ═══════════════════════════════════════════════════════════════
-export default function ConfigTab({ selected, configDraft, setConfigDraft, onSave, analytics, connectionStatus }) {
+export default function ConfigTab({ selected, configDraft, setConfigDraft, onSave, analytics, connectionStatus, theme }) {
+    const C = makeTokens(theme);
     const [phase, setPhase] = useState('select'); // select | wizard | generating | done | advanced
     const [selectedType, setSelectedType] = useState(null);
     const [wizardStep, setWizardStep] = useState(0);
@@ -348,6 +349,22 @@ export default function ConfigTab({ selected, configDraft, setConfigDraft, onSav
                                 <option value="echo">Echo (Masculina - Suave)</option>
                                 <option value="shimmer">Shimmer (Femenina - Clara)</option>
                             </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: C.textDim }}>Máx. Palabras por Respuesta</label>
+                            <input type="number" min="10" max="500" className="w-full rounded-lg p-3 text-sm focus:outline-none transition-colors"
+                                style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+                                onFocus={e => e.target.style.borderColor = C.indigo}
+                                onBlur={e => e.target.style.borderColor = C.border}
+                                value={configDraft.maxWords || 50} onChange={e => setConfigDraft(p => ({ ...p, maxWords: parseInt(e.target.value) || 50 }))} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: C.textDim }}>Máx. Mensajes antes de Derivar</label>
+                            <input type="number" min="1" max="100" className="w-full rounded-lg p-3 text-sm focus:outline-none transition-colors"
+                                style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+                                onFocus={e => e.target.style.borderColor = C.indigo}
+                                onBlur={e => e.target.style.borderColor = C.border}
+                                value={configDraft.maxMessages || 10} onChange={e => setConfigDraft(p => ({ ...p, maxMessages: parseInt(e.target.value) || 10 }))} />
                         </div>
                     </div>
                 </div>

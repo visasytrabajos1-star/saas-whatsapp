@@ -5,6 +5,8 @@ import { fetchJsonWithApiFallback, getAuthHeaders } from '../api';
 export default function BroadcastCampaign({ instanceId, instanceName }) {
     const [phonesText, setPhonesText] = useState('');
     const [message, setMessage] = useState('');
+    const [mediaUrl, setMediaUrl] = useState('');
+    const [mediaType, setMediaType] = useState('image'); // image, video, audio, document
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState(null);
     const [confirmModal, setConfirmModal] = useState(null);
@@ -41,7 +43,9 @@ export default function BroadcastCampaign({ instanceId, instanceName }) {
                 body: JSON.stringify({
                     instanceId,
                     phones: cleanedPhones,
-                    message
+                    message,
+                    mediaUrl: mediaUrl.trim() || null,
+                    mediaType
                 })
             });
 
@@ -107,7 +111,7 @@ export default function BroadcastCampaign({ instanceId, instanceName }) {
                             <div>
                                 <h4 className="text-xs font-bold text-orange-400">Riesgo de Ban / Rate Limits</h4>
                                 <p className="text-[10px] text-orange-200 mt-1">
-                                    El sistema inserta un delay activo de 2-5 segundos entre cada mensaje. Aún así, un uso abusivo puede bloquear tu número si usas WhatsApp Web/Baileys. Si usas Cloud API, asegúrate de tener una plantilla (Template) aprobada si pasaron 24hs desde la última interacción.
+                                    El sistema inserta un delay activo de 40 segundos entre cada mensaje para evitar baneos. Aún así, un uso abusivo puede bloquear tu número si usas WhatsApp Web/Baileys. Si usas Cloud API, asegúrate de tener una plantilla (Template) aprobada si pasaron 24hs desde la última interacción.
                                 </p>
                             </div>
                         </div>
@@ -118,11 +122,33 @@ export default function BroadcastCampaign({ instanceId, instanceName }) {
                     <div>
                         <label className="block text-xs font-bold text-slate-300 mb-1">Mensaje de la Campaña</label>
                         <textarea
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm h-32 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-500 transition-all"
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm h-32 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-500 transition-all mb-4"
                             placeholder="¡Hola! Retomamos el contacto porque vimos que estabas interesado en..."
                             value={message}
                             onChange={e => setMessage(e.target.value)}
                         />
+
+                        <label className="block text-xs font-bold text-slate-300 mb-1">Adjuntar Multimedia (Opcional)</label>
+                        <div className="flex gap-2 mb-1">
+                            <select
+                                className="bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-fuchsia-500 w-1/3"
+                                value={mediaType}
+                                onChange={e => setMediaType(e.target.value)}
+                            >
+                                <option value="image">Imagen</option>
+                                <option value="video">Video</option>
+                                <option value="audio">Audio (Nota de voz)</option>
+                                <option value="document">Documento (PDF)</option>
+                            </select>
+                            <input
+                                type="url"
+                                className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-fuchsia-500"
+                                placeholder="URL pública de la imagen/video/audio (Ej: https://...)"
+                                value={mediaUrl}
+                                onChange={e => setMediaUrl(e.target.value)}
+                            />
+                        </div>
+                        <p className="text-[10px] text-slate-500">Debe ser un enlace directo público (terminado en .jpg, .mp4, .pdf, etc.). Enlaces web comunes pueden ir en el texto.</p>
                     </div>
 
                     <button
