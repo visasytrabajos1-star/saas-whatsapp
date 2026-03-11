@@ -9,7 +9,7 @@ const cleanStr = (s) => (s || "").trim();
 
 // Hardcoded fallbacks (safe to expose — these are public Supabase credentials)
 const SUPABASE_URL_FALLBACK = 'https://ygsmooajrqldzdtcukfd.supabase.co';
-const SUPABASE_KEY_FALLBACK = 'sb_publishable_X3xx0LH-LOLJf7q5M52yVQ_JUq3AzT8';
+const SUPABASE_KEY_FALLBACK = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlnc21vb2FqcnFsZHpkdGN1a2ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NDYxMzIsImV4cCI6MjA4NzMyMjEzMn0.ioireDt3ZMI3RBKxwgslXQM9Xiw1zVAkOwnZ6MAXulM';
 
 const supabaseUrl = cleanStr(import.meta.env.VITE_SUPABASE_URL) || SUPABASE_URL_FALLBACK;
 const supabaseKey = cleanStr(import.meta.env.VITE_SUPABASE_ANON_KEY) || SUPABASE_KEY_FALLBACK;

@@ -69,7 +69,8 @@ async function generateResponse({ message, history = [], botConfig = {}, isAudio
     // Force conciseness
     systemPrompt += `\n\nREGLA ESTRICTA: Tu respuesta DEBE tener como MÁXIMO ${maxWords} palabras. Sé muy conciso y directo.`;
 
-    const cacheKey = crypto.createHash('md5').update(`v2:${botName}:${message}`).digest('hex');
+    const tenantId = botConfig.tenantId || 'default';
+    const cacheKey = crypto.createHash('md5').update(`v2:${tenantId}:${botName}:${message}`).digest('hex');
     let cached = global.responseCache.get(cacheKey);
 
     if (cached) {
