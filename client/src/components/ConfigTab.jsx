@@ -72,10 +72,10 @@ function SupportBanner({ text = '¿Necesitas ayuda configurando tu bot?' }) {
                 <HelpCircle size={20} style={{ color: C.amber }} />
                 <span className="text-sm font-medium" style={{ color: C.amber }}>{text}</span>
             </div>
-            <a href="https://wa.me/5491155551234?text=Necesito%20ayuda%20con%20mi%20bot" target="_blank" rel="noreferrer"
+            <a href="https://www.youtube.com/@AlexIOSaaS/playlists" target="_blank" rel="noreferrer"
                 className="text-xs font-bold px-3 py-1.5 rounded-lg transition-all hover:scale-105"
                 style={{ background: C.amber, color: '#000' }}>
-                Contactar Soporte
+                Ver Tutoriales
             </a>
         </div>
     );
@@ -90,14 +90,14 @@ function FloatingSupport() {
                 <div className="mb-3 rounded-xl p-4 shadow-2xl w-64 animate-in slide-in-from-bottom-2" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
                     <p className="text-sm font-bold mb-3" style={{ color: C.text }}>¿Necesitas ayuda?</p>
                     <div className="space-y-2">
-                        <a href="https://wa.me/5491155551234" target="_blank" rel="noreferrer"
+                        <a href="https://www.youtube.com/@AlexIOSaaS/videos" target="_blank" rel="noreferrer"
                             className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg transition-colors"
                             style={{ background: C.indigoDim, color: C.indigo }}>
-                            <MessageSquare size={16} /> WhatsApp Soporte
+                            <Play size={16} /> Tutoriales YouTube
                         </a>
                         <a href="#" className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg transition-colors"
                             style={{ background: C.amberDim, color: C.amber }}>
-                            <ExternalLink size={16} /> Chat en Vivo
+                            <ExternalLink size={16} /> Centro de Ayuda
                         </a>
                     </div>
                 </div>

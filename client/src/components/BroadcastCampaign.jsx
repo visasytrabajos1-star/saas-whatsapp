@@ -1,3 +1,4 @@
+import React, { useState } from 'react';
 import { Send, Users, AlertTriangle, Loader, CheckCircle2, UploadCloud, Paperclip } from 'lucide-react';
 import { fetchJsonWithApiFallback, getAuthHeaders } from '../api';
 
