@@ -72,7 +72,7 @@ async function ingestDocument(tenantId, instanceId, documentName, documentText) 
         try {
             const embedding = await generateEmbedding(chunk);
             const { error } = await supabase.from('document_chunks').insert({
-                tenant_id: tenantId,
+                tenant_id: tenantId || '00000000-0000-0000-0000-000000000000',
                 instance_id: instanceId,
                 document_name: documentName,
                 chunk_content: chunk,
@@ -81,11 +81,13 @@ async function ingestDocument(tenantId, instanceId, documentName, documentText) 
 
             if (error) {
                 console.error(`❌ Fallo guardando chunk de RAG:`, error.message);
+                throw new Error(`Supabase Error: ${error.message}`);
             } else {
                 successCount++;
             }
         } catch (err) {
             console.error(`❌ Error vectorizando chunk:`, err.message);
+            throw err; // Relay to caller
         }
     }
 

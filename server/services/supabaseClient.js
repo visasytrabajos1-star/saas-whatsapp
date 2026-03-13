@@ -1,10 +1,13 @@
 const { createClient } = require('@supabase/supabase-js');
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-    || process.env.SUPABASE_ANON_KEY
-    || process.env.SUPABASE_KEY
-    || process.env.VITE_SUPABASE_ANON_KEY;
+// --- VALIDATE KEY ---
+const isDummyKey = (key) => !key || key.startsWith('sb_secret_') || key.startsWith('sb_publishable_');
+
+const supabaseKey = (!isDummyKey(process.env.SUPABASE_SERVICE_ROLE_KEY) ? process.env.SUPABASE_SERVICE_ROLE_KEY : null)
+    || (!isDummyKey(process.env.SUPABASE_ANON_KEY) ? process.env.SUPABASE_ANON_KEY : null)
+    || (!isDummyKey(process.env.SUPABASE_KEY) ? process.env.SUPABASE_KEY : null)
+    || (!isDummyKey(process.env.VITE_SUPABASE_ANON_KEY) ? process.env.VITE_SUPABASE_ANON_KEY : null);
 
 let supabase = null;
 
@@ -20,9 +23,9 @@ module.exports = {
 };
 
 // Startup log
-const keySource = process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SERVICE_ROLE_KEY'
-    : process.env.SUPABASE_ANON_KEY ? 'ANON_KEY'
-        : process.env.SUPABASE_KEY ? 'SUPABASE_KEY'
-            : process.env.VITE_SUPABASE_ANON_KEY ? 'VITE_ANON_KEY'
-                : 'NONE';
+const keySource = !isDummyKey(process.env.SUPABASE_SERVICE_ROLE_KEY) ? 'SERVICE_ROLE_KEY'
+    : !isDummyKey(process.env.SUPABASE_ANON_KEY) ? 'ANON_KEY'
+        : !isDummyKey(process.env.SUPABASE_KEY) ? 'SUPABASE_KEY'
+            : !isDummyKey(process.env.VITE_SUPABASE_ANON_KEY) ? 'VITE_ANON_KEY'
+                : 'NONE/DUMMY';
 console.log(`🔗 Supabase: ${supabase ? '✅ Connected' : '❌ Disabled'} (key source: ${keySource}, url: ${supabaseUrl ? 'set' : 'missing'})`);
