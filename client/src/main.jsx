@@ -32,7 +32,7 @@ class GlobalErrorBoundary extends Component {
   }
 }
 
-console.log("🚀 [ALEX IO] System Boot: main.jsx initiated");
+if (import.meta.env.DEV) console.log("🚀 [ALEX IO] System Boot: main.jsx initiated");
 
 try {
   const rootElement = document.getElementById('root');
@@ -47,7 +47,7 @@ try {
         </GlobalErrorBoundary>
       </StrictMode>
     );
-    console.log("✅ [ALEX IO] Virtual DOM Mount requested");
+    if (import.meta.env.DEV) console.log("✅ [ALEX IO] Virtual DOM Mount requested");
   }
 } catch (bootError) {
   console.error("❌ [ALEX IO] FATAL BOOT ERROR:", bootError);

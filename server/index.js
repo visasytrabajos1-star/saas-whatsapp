@@ -24,6 +24,13 @@ const globalLimiter = rateLimit({
     message: { error: 'Demasiadas peticiones. Por favor, intenta más tarde.', code: 'RATE_LIMIT_EXCEEDED' }
 });
 
+// Rate Limiting para endpoints sensibles (Auth/Connect) - TIGHTENED FOR PRODUCTION
+const sensitiveLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hora
+    limit: process.env.NODE_ENV === 'production' ? 30 : 100, // 30/hr in prod, 100/hr in dev
+    message: { error: 'Límite de intentos operativos excedido. Por favor, protege tu cuenta y espera una hora.', code: 'SENSITIVE_LIMIT_EXCEEDED' }
+});
+
 // Rate Limiting por Tenant (Solo para usuarios autenticados)
 const tenantLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hora
@@ -38,17 +45,39 @@ const tenantLimiter = rateLimit({
 });
 
 // Rate Limiting para endpoints sensibles (Auth/Connect) - RELAXED FOR TESTING
-const sensitiveLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hora
-    limit: 100, // Máximo 100 intentos por hora (antes 10)
-    message: { error: 'Límite de intentos operativos excedido. Por favor, espera una hora.', code: 'SENSITIVE_LIMIT_EXCEEDED' }
-});
-
 app.use(globalLimiter);
-app.use(helmet());
+
+// --- SECURE CORS ---
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : ['http://localhost:5173', 'http://localhost:3000', 'https://alex-io-server.onrender.com'];
+
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl) if needed, 
+        // but for production web, it's safer to be strict.
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            logger.warn(`🚫 CORS blocked for origin: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true
+}));
+
+// --- SECURITY HEADERS ---
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+            "img-src": ["'self'", "data:", "https://*.supabase.co", "https://*.onrender.com", "https://*.google.com"],
+            "connect-src": ["'self'", "https://*.supabase.co", "https://*.onrender.com", "https://*.google.com", "https://*.openai.com"]
+        }
+    }
+}));
 
 // Middleware
-app.use(cors());
 const jsonParser = express.json();
 
 // Stripe requiere body crudo para validar firma de webhook.
