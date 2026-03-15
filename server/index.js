@@ -170,7 +170,7 @@ if (frontendPath) {
 app.get('/api/status', (req, res) => {
     res.json({
         status: 'online',
-        version: '2.0.4.16',
+        version: '2.0.4.20',
         platform: 'ALEX IO SAAS',
         features: ['V6 Protocol Hardening', 'V8 Multi-Tenancy', 'TTS Voice'],
         users: 'Optimized for scale'
