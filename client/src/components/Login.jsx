@@ -43,7 +43,10 @@ export default function Login() {
     const handleAuth = async (e) => {
         e.preventDefault();
         if (!supabase) {
-            showMsg('Supabase no está configurado. Contactá al administrador.');
+            const hasUrl = !!import.meta.env.VITE_SUPABASE_URL;
+            const keyRaw = import.meta.env.VITE_SUPABASE_ANON_KEY || 'MISSING';
+            const keyValid = keyRaw.startsWith('eyJ');
+            showMsg(`Supabase no configurado. URL: ${hasUrl ? 'OK' : 'FAIL'}, KEY: ${keyValid ? 'JWT' : 'INVALID/MISSING'}. Ver: 2.0.4.21`);
             return;
         }
         setLoading(true);
