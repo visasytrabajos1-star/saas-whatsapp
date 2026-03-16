@@ -50,16 +50,21 @@ app.use(globalLimiter);
 // --- SECURE CORS ---
 const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-    : ['http://localhost:5173', 'http://localhost:3000', 'https://alex-io-server.onrender.com'];
+    : null; // null means allow all in current stabilization phase
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps or curl) if needed, 
-        // but for production web, it's safer to be strict.
+        if (!allowedOrigins) {
+            // WARN level in production if origins not restricted
+            if (process.env.NODE_ENV === 'production') {
+                console.warn('⚠️ SEGURIDAD: ALLOWED_ORIGINS no está configurado. Permitiendo todos los orígenes por compatibilidad.');
+            }
+            return callback(null, true);
+        }
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
-            logger.warn(`🚫 CORS blocked for origin: ${origin}`);
+            console.error(`❌ CORS BLOCKED: Origin ${origin} not in allowlist:`, allowedOrigins);
             callback(new Error('Not allowed by CORS'));
         }
     },

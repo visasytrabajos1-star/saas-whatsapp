@@ -11,21 +11,29 @@ const cleanStr = (s) => (s || "").trim();
 const SUPABASE_URL_FALLBACK = 'https://ygsmooajrqldzdtcukfd.supabase.co';
 const SUPABASE_KEY_FALLBACK = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlnc21vb2FqcnFsZHpkdGN1a2ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NDYxMzIsImV4cCI6MjA4NzMyMjEzMn0.ioireDt3ZMI3RBKxwgslXQM9Xiw1zVAkOwnZ6MAXulM';
 
-const supabaseUrl = cleanStr(import.meta.env.VITE_SUPABASE_URL) || SUPABASE_URL_FALLBACK;
-const supabaseKey = cleanStr(import.meta.env.VITE_SUPABASE_ANON_KEY) || SUPABASE_KEY_FALLBACK;
+const envUrl = cleanStr(import.meta.env.VITE_SUPABASE_URL);
+const envKey = cleanStr(import.meta.env.VITE_SUPABASE_ANON_KEY);
 
-// ... debug helper ...
+// Validation: Supabase Anon Keys must be JWTs (starting with eyJ)
+// If the key in the environment is invalid (e.g. accidentally a Stripe key), we use fallback.
+const isKeyValid = (key) => key && key.startsWith('eyJ');
+
+const supabaseUrl = envUrl || SUPABASE_URL_FALLBACK;
+const supabaseKey = isKeyValid(envKey) ? envKey : SUPABASE_KEY_FALLBACK;
+
+if (envKey && !isKeyValid(envKey)) {
+    console.warn('⚠️ La clave VITE_SUPABASE_ANON_KEY en el ambiente no parece un JWT de Supabase. Usando fallback seguro.');
+}
 
 let supabase = null;
 
-if (supabaseUrl && supabaseKey && supabaseKey !== "TU_CLAVE_AQUI") {
-    try {
+try {
+    if (supabaseUrl && supabaseKey) {
         supabase = createClient(supabaseUrl, supabaseKey);
-    } catch (e) {
-        console.error("Error inicializando Supabase Client:", e);
     }
-} else {
-    console.warn('⚠️ Supabase no configurado o en Modo Demo.');
+} catch (e) {
+    console.error("❌ Error fatal inicializando Supabase:", e.message);
 }
 
 export { supabase };
+
