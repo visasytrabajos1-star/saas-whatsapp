@@ -39,6 +39,11 @@ export const fetchWithApiFallback = async (path, options = {}) => {
   const authHeaders = getAuthHeaders();
   const mergedHeaders = { ...headers, ...authHeaders };
 
+  // Debug log for the 401 loop investigation
+  if (path.includes('/api/saas/status')) {
+    console.log(`[API Debug] Fetching ${path}. Auth Header present: ${!!authHeaders['Authorization']}`);
+  }
+
   for (const base of bases) {
     const url = `${base}${path}`;
     const controller = new AbortController();
@@ -57,6 +62,7 @@ export const fetchWithApiFallback = async (path, options = {}) => {
 
       // Auto-logout on auth failures (stale/invalid tokens)
       if ((response.status === 401 || response.status === 403) && !path.includes('/api/auth/')) {
+        const VERSION = 'v2.0.4.24';
         const now = Date.now();
         const lastLogout = window.__alexLastLogoutTime || 0;
         // Only logout once every 5 seconds to prevent flickering loops

@@ -17,6 +17,7 @@ const authenticateTenant = async (req, res, next) => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        console.warn(`🔓 [Auth] Missing or malformed Authorization header. Header exists: ${!!authHeader}`);
         return res.status(401).json({
             error: 'No se proporcionó un token de acceso válido.',
             code: 'AUTH_REQUIRED'
@@ -25,10 +26,16 @@ const authenticateTenant = async (req, res, next) => {
 
     const token = authHeader.split(' ')[1]?.trim();
     if (!token) {
+        console.warn('🔓 [Auth] Token missing in Authorization header');
         return res.status(401).json({
             error: 'No se proporcionó un token de acceso válido.',
             code: 'AUTH_REQUIRED'
         });
+    }
+
+    // Diagnostic log for debugging (only in non-production or if special header present)
+    if (process.env.NODE_ENV !== 'production' || req.headers['x-debug-auth'] === 'true') {
+        console.log(`[Auth] Validating token: ${token.substring(0, 10)}...`);
     }
 
     try {
