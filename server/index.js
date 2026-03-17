@@ -14,6 +14,7 @@ logger.info('✅ Express trust proxy enabled');
 // --- SECURITY MIDDLEWARES ---
 const rateLimit = require('express-rate-limit');
 const { authenticateTenant } = require('./middleware/auth');
+const { createRequestMetricsMiddleware, getHealthSnapshot } = require('./services/observability');
 
 // Rate Limiting Global (IP based)
 const globalLimiter = rateLimit({
@@ -46,6 +47,7 @@ const tenantLimiter = rateLimit({
 
 // Rate Limiting para endpoints sensibles (Auth/Connect) - RELAXED FOR TESTING
 app.use(globalLimiter);
+app.use(createRequestMetricsMiddleware());
 
 // --- SECURE CORS ---
 const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -135,9 +137,18 @@ const buildToken = (user) => {
     };
 };
 
+const sessionExchangeLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: process.env.NODE_ENV === 'production' ? 120 : 300,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    message: { error: 'Demasiados intentos de validación de sesión. Intenta nuevamente en unos minutos.', code: 'SESSION_EXCHANGE_LIMIT_EXCEEDED' }
+});
+
 // POST /api/auth/session-exchange
 // Exchange a Supabase access_token for a backend JWT
-app.post('/api/auth/session-exchange', sensitiveLimiter, async (req, res) => {
+app.post('/api/auth/session-exchange', sessionExchangeLimiter, async (req, res) => {
     const { access_token } = req.body;
     if (!access_token) return res.status(400).json({ error: 'Supabase access_token is required' });
 
@@ -204,11 +215,18 @@ if (frontendPath) {
 app.get('/api/status', (req, res) => {
     res.json({
         status: 'online',
-        version: '2.0.4.20',
+        version: '2.0.5.0',
         platform: 'ALEX IO SAAS',
         features: ['V6 Protocol Hardening', 'V8 Multi-Tenancy', 'TTS Voice'],
         users: 'Optimized for scale'
     });
+});
+
+app.get('/api/sre/health', authenticateTenant, (req, res) => {
+    if (req.tenant?.role !== 'SUPERADMIN') {
+        return res.status(403).json({ error: 'Acceso denegado: solo SuperAdmin' });
+    }
+    return res.json({ success: true, health: getHealthSnapshot() });
 });
 
 // WhatsApp Routes (Protected & Rate Limited by Tenant)

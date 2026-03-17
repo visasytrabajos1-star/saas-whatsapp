@@ -62,24 +62,21 @@ export const fetchWithApiFallback = async (path, options = {}) => {
 
       // Auto-logout on auth failures (stale/invalid tokens)
       if ((response.status === 401 || response.status === 403) && !path.includes('/api/auth/')) {
-        const VERSION = 'v2.0.4.24';
-        const now = Date.now();
-        const lastLogout = window.__alexLastLogoutTime || 0;
-        // Only logout once every 5 seconds to prevent flickering loops
-        if (now - lastLogout > 5000 && !window.__alexLogoutRedirecting) {
+        // Hard guard: redirect only once per app lifecycle to avoid infinite flicker.
+        if (!window.__alexLogoutRedirecting) {
           console.warn('🔒 Token rechazado por el backend (HTTP', response.status, '). Limpiando sesión...');
           window.__alexLogoutRedirecting = true;
-          window.__alexLastLogoutTime = now;
           localStorage.removeItem('alex_io_token');
           localStorage.removeItem('alex_io_role');
           localStorage.removeItem('demo_email');
           localStorage.removeItem('alex_io_tenant');
           sessionStorage.removeItem('alex_io_token');
-          setTimeout(() => {
-            window.__alexLogoutRedirecting = false;
-            window.location.hash = '#/login';
-            window.location.reload();
-          }, 500);
+
+          // Important: do NOT force reload() here, it can trigger repeated mount/unmount
+          // loops while multiple requests fail simultaneously.
+          if (typeof window !== 'undefined' && !window.location.hash.includes('/login')) {
+            window.location.replace(`${window.location.pathname}#/login`);
+          }
         }
       }
 

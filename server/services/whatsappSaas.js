@@ -17,6 +17,7 @@ const ragService = require('./ragService');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const upload = multer({ storage: multer.memoryStorage() });
+const { recordWhatsappMessage } = require('./observability');
 
 const {
     savePromptVersion,
@@ -255,6 +256,7 @@ const forbidIfNotOwner = (req, res, instanceId) => {
 
 // --- HANDLER: QR MODE (Baileys) ---
 async function handleQRMessage(sock, msg, instanceId) {
+    const waProcessingStart = Date.now();
     if (!msg.message || msg.key.fromMe) return;
 
     const remoteJid = msg.key.remoteJid;
@@ -560,7 +562,9 @@ async function handleQRMessage(sock, msg, instanceId) {
                 await sock.sendMessage(remoteJid, { text: result.text });
             }
         }
+        recordWhatsappMessage({ latencyMs: Date.now() - waProcessingStart, ok: true });
     } catch (err) {
+        recordWhatsappMessage({ latencyMs: Date.now() - waProcessingStart, ok: false });
         console.error(`❌ [${instanceId}] Error handling message:`, err.message);
     }
 }

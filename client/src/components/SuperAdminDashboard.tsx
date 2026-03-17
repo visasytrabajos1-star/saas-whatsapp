@@ -34,6 +34,14 @@ interface GlobalStats {
     estimated_daily_cost: number;
 }
 
+interface SreHealthSnapshot {
+    http: { error_5xx_count: number; latency_avg_ms: number; latency_p95_ms: number };
+    ai: { failures: number; latency_avg_ms: number; latency_p95_ms: number; providers: Record<string, any> };
+    whatsapp: { failures: number; latency_avg_ms: number; latency_p95_ms: number };
+    window: { requests: number; ai_calls: number; whatsapp_messages: number };
+    generated_at: string;
+}
+
 const SuperAdminDashboard = () => {
     const [stats, setStats] = useState<GlobalStats>({
         total_users: 0,
@@ -50,6 +58,7 @@ const SuperAdminDashboard = () => {
     const [botDetails, setBotDetails] = useState<any>(null);
     const [loadingDetails, setLoadingDetails] = useState(false);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const [healthData, setHealthData] = useState<SreHealthSnapshot | null>(null);
 
     useEffect(() => {
         fetchGlobalData();
@@ -91,6 +100,14 @@ const SuperAdminDashboard = () => {
                     bots_with_errors: botsWithErrors,
                     estimated_daily_cost: totalCost
                 });
+            }
+
+            // Fetch SRE Health Snapshot
+            const healthRes = await fetchJsonWithApiFallback('/api/sre/health', {
+                headers: { ...getAuthHeaders() }
+            });
+            if (healthRes.response.ok && healthRes.data.success) {
+                setHealthData(healthRes.data.health);
             }
         } catch (err: any) {
             console.error("SuperAdmin Error:", err.message);
@@ -203,6 +220,47 @@ const SuperAdminDashboard = () => {
                 <MetricCard title="Bots con Errores" value={stats.bots_with_errors} icon={<AlertTriangle className="text-red-400" size={18} />} accent={stats.bots_with_errors > 0 ? 'red' : undefined} />
                 <MetricCard title="Costo IA / Día" value={`$${stats.estimated_daily_cost.toFixed(4)}`} icon={<Cpu className="text-cyan-400" size={18} />} />
             </div>
+
+            {/* SRE Health Snapshot (v5) */}
+            {healthData && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-10">
+                    <div className="lg:col-span-3 flex items-center gap-2 mb-2">
+                        <Activity size={18} className="text-emerald-500" />
+                        <h3 className="font-bold text-sm uppercase tracking-widest text-slate-400">Observabilidad SRE v5 (Real-time)</h3>
+                        <span className="text-[10px] text-slate-600 ml-auto">Última actualización: {new Date(healthData.generated_at).toLocaleTimeString()}</span>
+                    </div>
+
+                    <HealthPanel
+                        title="Infraestructura HTTP"
+                        icon={<Server size={16} />}
+                        metrics={[
+                            { label: 'Errores 5xx', value: healthData.http.error_5xx_count, unit: 'req', bad: healthData.http.error_5xx_count > 0 },
+                            { label: 'Latencia P95', value: healthData.http.latency_p95_ms, unit: 'ms', warn: healthData.http.latency_p95_ms > 800 },
+                            { label: 'Ventana', value: healthData.window.requests, unit: 'req' }
+                        ]}
+                    />
+
+                    <HealthPanel
+                        title="Motores de IA"
+                        icon={<Zap size={16} />}
+                        metrics={[
+                            { label: 'Fallos Críticos', value: healthData.ai.failures, unit: 'err', bad: healthData.ai.failures > 0 },
+                            { label: 'Latencia Promedio', value: healthData.ai.latency_avg_ms, unit: 'ms' },
+                            { label: 'Llamadas (Win)', value: healthData.window.ai_calls, unit: 'op' }
+                        ]}
+                    />
+
+                    <HealthPanel
+                        title="WhatsApp Gateway"
+                        icon={<MessageCircle size={16} />}
+                        metrics={[
+                            { label: 'Errores Proces.', value: healthData.whatsapp.failures, unit: 'msg', bad: healthData.whatsapp.failures > 0 },
+                            { label: 'Latencia P95', value: healthData.whatsapp.latency_p95_ms, unit: 'ms', warn: healthData.whatsapp.latency_p95_ms > 2000 },
+                            { label: 'Tráfico (Win)', value: healthData.window.whatsapp_messages, unit: 'msg' }
+                        ]}
+                    />
+                </div>
+            )}
 
             {/* Clients Table */}
             <section className="bg-slate-950 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
@@ -448,6 +506,28 @@ const AiModelCard = ({ name, color, count, tokens, cost }: any) => (
                 <span className="text-slate-500">Costo est.</span>
                 <span className={`font-mono ${cost > 0 ? 'text-yellow-400' : 'text-slate-500'}`}>${cost.toFixed(4)}</span>
             </div>
+        </div>
+    </div>
+);
+
+const HealthPanel = ({ title, icon, metrics }: any) => (
+    <div className="bg-slate-950/40 border border-slate-800/50 rounded-2xl p-4">
+        <div className="flex items-center gap-2 mb-4 text-slate-300">
+            <div className="p-1.5 bg-slate-800 rounded-lg">{icon}</div>
+            <h4 className="text-xs font-bold uppercase tracking-wider">{title}</h4>
+        </div>
+        <div className="space-y-3">
+            {metrics.map((m: any, idx: number) => (
+                <div key={idx} className="flex justify-between items-center">
+                    <span className="text-[11px] text-slate-500 font-medium">{m.label}</span>
+                    <div className="flex items-baseline gap-1">
+                        <span className={`text-sm font-mono font-bold ${m.bad ? 'text-red-500' : m.warn ? 'text-yellow-500' : 'text-slate-200'}`}>
+                            {m.value}
+                        </span>
+                        <span className="text-[9px] text-slate-600 uppercase">{m.unit}</span>
+                    </div>
+                </div>
+            ))}
         </div>
     </div>
 );

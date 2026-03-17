@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 const personas = require('../config/personas');
 const ragService = require('./ragService');
+const { recordAiCall } = require('./observability');
 
 // Circuit Breaker for expired keys
 const deadKeys = new Set();
@@ -118,6 +119,7 @@ async function generateResponse({ message, history = [], botConfig = {}, isAudio
         ];
 
         for (const g of gems) {
+            const geminiStartedAt = Date.now();
             try {
                 console.log(`🚀 [${botName}] Consultando ${g.m} (${g.v})...`);
                 const url = `https://generativelanguage.googleapis.com/${g.v}/models/${g.m}:generateContent?key=${GEMINI_KEY}`;
@@ -138,9 +140,13 @@ async function generateResponse({ message, history = [], botConfig = {}, isAudio
                 if (res.data.candidates?.[0]?.content?.parts?.[0]?.text) {
                     responseText = res.data.candidates[0].content.parts[0].text;
                     usedModel = g.m;
+                    const latencyMs = Date.now() - geminiStartedAt;
+                    recordAiCall({ provider: 'gemini', latencyMs, ok: true });
                     break;
                 }
             } catch (err) {
+                const latencyMs = Date.now() - geminiStartedAt;
+                recordAiCall({ provider: 'gemini', latencyMs, ok: false });
                 const errorMsg = err.response?.data?.error?.message || err.message;
                 const statusCode = err.response?.status;
                 console.warn(`⚠️ [${botName}] ${g.m} falló (${statusCode}):`, errorMsg);
@@ -162,6 +168,7 @@ async function generateResponse({ message, history = [], botConfig = {}, isAudio
 
     // 2. DEEPSEEK FALLBACK (If configured and Gemini failed)
     if (!responseText && DEEPSEEK_KEY && !deadKeys.has('DEEPSEEK')) {
+        const dsStartedAt = Date.now();
         try {
             console.log(`🚀 [${botName}] Fallback extra: DeepSeek...`);
             const dsRes = await axios.post('https://api.deepseek.com/v1/chat/completions', {
@@ -175,7 +182,9 @@ async function generateResponse({ message, history = [], botConfig = {}, isAudio
 
             responseText = dsRes.data.choices[0].message.content;
             usedModel = 'deepseek-chat';
+            recordAiCall({ provider: 'deepseek', latencyMs: Date.now() - dsStartedAt, ok: true });
         } catch (err) {
+            recordAiCall({ provider: 'deepseek', latencyMs: Date.now() - dsStartedAt, ok: false });
             const errorMsg = err.response?.data?.error?.message || err.message;
             console.warn(`⚠️ [${botName}] DeepSeek Fallback Error:`, errorMsg);
             if (errorMsg.includes('Balance') || errorMsg.includes('API key')) {
@@ -187,6 +196,7 @@ async function generateResponse({ message, history = [], botConfig = {}, isAudio
 
     // 3. OPENAI FALLBACK (Secondary)
     if (!responseText && OPENAI_KEY && !deadKeys.has('OPENAI')) {
+        const oaStartedAt = Date.now();
         try {
             console.log(`🚀 [${botName}] Fallback: GPT-4o-mini...`);
             const completion = await axios.post('https://api.openai.com/v1/chat/completions', {
@@ -200,7 +210,9 @@ async function generateResponse({ message, history = [], botConfig = {}, isAudio
 
             responseText = completion.data.choices[0].message.content;
             usedModel = 'gpt-4o-mini';
+            recordAiCall({ provider: 'openai', latencyMs: Date.now() - oaStartedAt, ok: true });
         } catch (err) {
+            recordAiCall({ provider: 'openai', latencyMs: Date.now() - oaStartedAt, ok: false });
             const errorMsg = err.response?.data?.error?.message || err.message;
             console.error(`❌ [${botName}] OpenAI Error:`, errorMsg);
             if (errorMsg.includes('expired') || errorMsg.includes('Insufficient')) {

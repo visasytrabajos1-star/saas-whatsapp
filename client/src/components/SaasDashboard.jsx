@@ -11,7 +11,7 @@ import DataCompliance from './DataCompliance';
 import ConfigTab from './ConfigTab';
 import { fetchJsonWithApiFallback, getLastResolvedApiBase, getPreferredApiBase, getAuthHeaders } from '../api';
 
-const VERSION = 'v2.0.4.24';
+const VERSION = 'v2.0.5.0';
 
 // Inject DM Sans font
 if (typeof document !== 'undefined' && !document.getElementById('dm-sans-font')) {
