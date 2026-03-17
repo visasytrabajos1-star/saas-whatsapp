@@ -10,6 +10,7 @@ import BroadcastCampaign from './BroadcastCampaign';
 import DataCompliance from './DataCompliance';
 import ConfigTab from './ConfigTab';
 import { fetchJsonWithApiFallback, getLastResolvedApiBase, getPreferredApiBase, getAuthHeaders } from '../api';
+import { supabase } from '../supabaseClient';
 
 const VERSION = 'v2.0.5.0';
 
@@ -93,6 +94,27 @@ function SaasDashboard() {
   const userEmail = localStorage.getItem('demo_email') || 'user@app.com';
   const userRole = localStorage.getItem('alex_io_role') || 'OWNER';
   const userTenant = localStorage.getItem('alex_io_tenant') || '';
+
+  const handleLogout = async () => {
+    try {
+      if (supabase?.auth) {
+        await supabase.auth.signOut();
+      }
+    } catch (e) {
+      console.warn('Logout Supabase warning:', e?.message || e);
+    }
+
+    localStorage.removeItem('alex_io_token');
+    localStorage.removeItem('demo_email');
+    localStorage.removeItem('alex_io_role');
+    localStorage.removeItem('alex_io_tenant');
+    sessionStorage.removeItem('alex_io_token');
+
+    if (typeof window !== 'undefined') {
+      window.__alexLogoutRedirecting = false;
+      window.location.replace('/#/login');
+    }
+  };
 
   const [connecting, setConnecting] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -622,13 +644,7 @@ function SaasDashboard() {
 
           <Link to="/pricing" className="px-4 py-2 rounded-lg font-bold text-sm transition-all hover:scale-105" style={{ background: 'linear-gradient(135deg, #6366f1, #7c3aed)', color: '#fff' }}>Planes</Link>
           <button
-            onClick={() => {
-              localStorage.removeItem('alex_io_token');
-              localStorage.removeItem('demo_email');
-              localStorage.removeItem('alex_io_role');
-              localStorage.removeItem('alex_io_tenant');
-              window.location.href = '/#/login';
-            }}
+            onClick={handleLogout}
             className="hover:text-red-400 transition-colors p-2"
             style={{ color: T.textMuted }}
             title="Cerrar sesión"

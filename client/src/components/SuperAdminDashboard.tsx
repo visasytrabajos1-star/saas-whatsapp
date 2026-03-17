@@ -36,7 +36,7 @@ interface GlobalStats {
 
 interface SreHealthSnapshot {
     http: { error_5xx_count: number; latency_avg_ms: number; latency_p95_ms: number };
-    ai: { failures: number; latency_avg_ms: number; latency_p95_ms: number; providers: Record<string, any> };
+    ai: { failures: number; latency_avg_ms: number; providers: Record<string, { failures: number; lastErrorAt: string | null }> };
     whatsapp: { failures: number; latency_avg_ms: number; latency_p95_ms: number };
     window: { requests: number; ai_calls: number; whatsapp_messages: number };
     generated_at: string;
