@@ -144,19 +144,22 @@ function App() {
     return <FullPageLoader label="CARGANDO ALEX IO..." />;
   }
 
+  const backendToken = localStorage.getItem('alex_io_token') || sessionStorage.getItem('alex_io_token');
+  const isAuthenticated = !!session && !!backendToken;
+
   const ProtectedRoute = ({ children }) => {
-    if (!session) return <Navigate to="/login" />;
+    if (!isAuthenticated) return <Navigate to="/login" />;
     return children;
   };
 
   const RoleRoute = ({ children, allowedRoles }) => {
     const role = session?.user?.role || localStorage.getItem('alex_io_role') || 'OWNER';
-    if (!session && role !== 'SUPERADMIN') return <Navigate to="/login" />;
+    if (!isAuthenticated && role !== 'SUPERADMIN') return <Navigate to="/login" />;
     if (!allowedRoles.includes(role)) return <Navigate to="/dashboard" />;
     return children;
   };
 
-  const defaultPath = session?.user?.role === 'SUPERADMIN' ? '/superadmin' : '/dashboard';
+  const defaultPath = (localStorage.getItem('alex_io_role') || session?.user?.role) === 'SUPERADMIN' ? '/superadmin' : '/dashboard';
 
   return (
     <AuthProvider>
@@ -164,7 +167,7 @@ function App() {
         <div className="min-h-screen bg-black selection:bg-blue-500/30">
           <Suspense fallback={<FullPageLoader />}>
             <Routes>
-              <Route path="/login" element={!session ? <Login /> : <Navigate to={defaultPath} />} />
+              <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to={defaultPath} />} />
               <Route path="/superadmin-login" element={<SuperAdminLogin />} />
 
               <Route
