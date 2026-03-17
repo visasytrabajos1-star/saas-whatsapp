@@ -1,6 +1,6 @@
 const normalize = (url) => (url || '').replace(/\/$/, '');
 
-const RENDER_BACKEND_HINT = import.meta.env.VITE_RENDER_BACKEND_URL || 'https://alex-io-server.onrender.com';
+const RENDER_BACKEND_HINT = import.meta.env.VITE_RENDER_BACKEND_URL || (typeof window !== 'undefined' ? window.location.origin : '');
 const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 45000);
 const FORCE_PRIMARY_BACKEND = import.meta.env.VITE_FORCE_PRIMARY_BACKEND === 'true';
 const ALLOW_ORIGIN_FALLBACK = import.meta.env.VITE_ALLOW_ORIGIN_FALLBACK !== 'false';
@@ -57,19 +57,23 @@ export const fetchWithApiFallback = async (path, options = {}) => {
 
       // Auto-logout on auth failures (stale/invalid tokens)
       if ((response.status === 401 || response.status === 403) && !path.includes('/api/auth/')) {
-        console.warn('🔒 Token rechazado por el backend (HTTP', response.status, '). Limpiando sesión...');
-        localStorage.removeItem('alex_io_token');
-        localStorage.removeItem('alex_io_role');
-        localStorage.removeItem('demo_email');
-        localStorage.removeItem('alex_io_tenant');
-        sessionStorage.removeItem('alex_io_token');
-        // Redirect to login (debounced to avoid loops)
-        if (!window.__alexLogoutRedirecting) {
+        const now = Date.now();
+        const lastLogout = window.__alexLastLogoutTime || 0;
+        // Only logout once every 5 seconds to prevent flickering loops
+        if (now - lastLogout > 5000 && !window.__alexLogoutRedirecting) {
+          console.warn('🔒 Token rechazado por el backend (HTTP', response.status, '). Limpiando sesión...');
           window.__alexLogoutRedirecting = true;
+          window.__alexLastLogoutTime = now;
+          localStorage.removeItem('alex_io_token');
+          localStorage.removeItem('alex_io_role');
+          localStorage.removeItem('demo_email');
+          localStorage.removeItem('alex_io_tenant');
+          sessionStorage.removeItem('alex_io_token');
           setTimeout(() => {
+            window.__alexLogoutRedirecting = false;
             window.location.hash = '#/login';
             window.location.reload();
-          }, 100);
+          }, 500);
         }
       }
 
