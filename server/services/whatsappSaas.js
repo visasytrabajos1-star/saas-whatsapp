@@ -10,12 +10,12 @@ const pino = require('pino');
 const express = require('express');
 const router = express.Router();
 const alexBrain = require('./alexBrain');
-const { supabase, isSupabaseEnabled } = require('./supabaseClient');
+const { supabase, supabaseAdmin, isSupabaseEnabled } = require('./supabaseClient');
 const hubspotService = require('./hubspotService');
 const copperService = require('./copperService');
 const ragService = require('./ragService');
 const multer = require('multer');
-const pdfParse = require('pdf-parse');
+const { extractTextFromPDF } = require('./pdfService');
 const upload = multer({ storage: multer.memoryStorage() });
 const { recordWhatsappMessage } = require('./observability');
 
@@ -231,8 +231,32 @@ const clearSessionRuntime = (instanceId) => {
 const safeDeletePersistentSession = async (instanceId) => {
     if (!isSupabaseEnabled) return;
 
-    const { error } = await supabase.from(sessionsTable).delete().eq('instance_id', instanceId);
+    const db = supabaseAdmin || supabase;
+    const { error } = await db.from(sessionsTable).delete().eq('instance_id', instanceId);
     if (error) console.warn(`⚠️ Failed deleting ${instanceId} from Supabase:`, error.message);
+};
+
+const purgeBotData = async (instanceId) => {
+    if (!isSupabaseEnabled) return;
+
+    const db = supabaseAdmin || supabase;
+    const cleanupTargets = [
+        { table: 'document_chunks', column: 'instance_id' },
+        { table: 'messages', column: 'instance_id' },
+        { table: 'bot_events', column: 'instance_id' },
+        { table: 'bot_ai_usage', column: 'instance_id' }
+    ];
+
+    for (const target of cleanupTargets) {
+        try {
+            const { error } = await db.from(target.table).delete().eq(target.column, instanceId);
+            if (error) {
+                console.warn(`⚠️ Failed deleting ${instanceId} from ${target.table}:`, error.message);
+            }
+        } catch (error) {
+            console.warn(`⚠️ Unexpected cleanup error in ${target.table} for ${instanceId}:`, error.message);
+        }
+    }
 };
 
 hydrateSessionStatus().catch((error) => {
@@ -839,6 +863,7 @@ router.post('/disconnect', async (req, res) => {
     clientConfigs.delete(instanceId);
     sessionStatus.delete(instanceId);
     await safeDeletePersistentSession(instanceId);
+    await purgeBotData(instanceId);
 
     try { fs.rmSync(`./sessions/${instanceId}`, { recursive: true, force: true }); } catch (_) { }
 
@@ -1115,8 +1140,7 @@ router.post('/knowledge/:instanceId/upload', upload.single('file'), async (req, 
         let textContent = '';
 
         if (originalName.toLowerCase().endsWith('.pdf')) {
-            const pdfData = await pdfParse(fileBuffer);
-            textContent = pdfData.text;
+            textContent = await extractTextFromPDF(fileBuffer);
         } else if (originalName.toLowerCase().endsWith('.txt')) {
             textContent = fileBuffer.toString('utf-8');
         } else {
@@ -1146,11 +1170,16 @@ router.post('/upload-media', upload.single('file'), async (req, res) => {
         const fileExt = file.originalname.split('.').pop();
         const fileName = `${tenantId}_${Date.now()}.${fileExt}`;
         const filePath = `broadcast/${fileName}`;
+        const storageClient = supabaseAdmin || supabase;
+
+        if (!storageClient) {
+            return res.status(500).json({ error: 'Supabase Storage no está configurado en el servidor.' });
+        }
 
         // Ensure 'media' bucket exists (fire-and-forget, non-blocking check)
-        supabase.storage.createBucket('media', { public: true }).catch(() => { });
+        storageClient.storage.createBucket('media', { public: true }).catch(() => { });
 
-        const { data, error } = await supabase.storage
+        const { data, error } = await storageClient.storage
             .from('media')
             .upload(filePath, file.buffer, {
                 contentType: file.mimetype,
@@ -1162,7 +1191,7 @@ router.post('/upload-media', upload.single('file'), async (req, res) => {
             return res.status(500).json({ error: `Error de almacenamiento: ${error.message}` });
         }
 
-        const { data: { publicUrl } } = supabase.storage
+        const { data: { publicUrl } } = storageClient.storage
             .from('media')
             .getPublicUrl(filePath);
 
@@ -1440,6 +1469,7 @@ router.post('/superadmin/bot-action', async (req, res) => {
             botEventLogs.delete(instanceId);
             botAiUsage.delete(instanceId);
             await safeDeletePersistentSession(instanceId);
+            await purgeBotData(instanceId);
             // Delete session folder
             const sessionPath = `${sessionsDir}/${instanceId}`;
             if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });

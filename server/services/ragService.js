@@ -1,6 +1,7 @@
 const { OpenAI } = require('openai');
-const { supabase, isSupabaseEnabled } = require('./supabaseClient');
+const { supabase, supabaseAdmin, isSupabaseEnabled } = require('./supabaseClient');
 const crypto = require('crypto');
+const db = supabaseAdmin || supabase;
 
 // Initialize OpenAI for embeddings
 let openai = null;
@@ -61,7 +62,7 @@ async function generateEmbedding(text) {
  * Fragmenta el texto, genera embeddings y lo guarda en Supabase (tabla document_chunks).
  */
 async function ingestDocument(tenantId, instanceId, documentName, documentText) {
-    if (!isSupabaseEnabled) throw new Error("Supabase is required for RAG.");
+    if (!isSupabaseEnabled || !db) throw new Error("Supabase is required for RAG.");
 
     console.log(`📚 Ingestando conocimiento: ${documentName} para instancia ${instanceId}`);
 
@@ -71,7 +72,7 @@ async function ingestDocument(tenantId, instanceId, documentName, documentText) 
     for (const chunk of chunks) {
         try {
             const embedding = await generateEmbedding(chunk);
-            const { error } = await supabase.from('document_chunks').insert({
+            const { error } = await db.from('document_chunks').insert({
                 tenant_id: tenantId || '00000000-0000-0000-0000-000000000000',
                 instance_id: instanceId,
                 document_name: documentName,
@@ -98,14 +99,14 @@ async function ingestDocument(tenantId, instanceId, documentName, documentText) 
  * Busca el contenido más relevante en la Knowledge Base basado en el Query del usuario.
  */
 async function queryKnowledgeBase(tenantId, instanceId, queryText, limit = 3) {
-    if (!isSupabaseEnabled || !openai) return null;
+    if (!isSupabaseEnabled || !openai || !db) return null;
 
     try {
         // 1. Convert user's message into an embedding vector
         const queryEmbedding = await generateEmbedding(queryText);
 
         // 2. Call the Supabase RPC function 'match_document_chunks'
-        const { data, error } = await supabase.rpc('match_document_chunks', {
+        const { data, error } = await db.rpc('match_document_chunks', {
             query_embedding: queryEmbedding,
             match_tenant_id: tenantId,
             match_instance_id: instanceId,
@@ -126,8 +127,8 @@ async function queryKnowledgeBase(tenantId, instanceId, queryText, limit = 3) {
  * Lista los documentos almacenados para una instancia (para borrarlos en UI)
  */
 async function listDocuments(tenantId, instanceId) {
-    if (!isSupabaseEnabled) return [];
-    const { data, error } = await supabase
+    if (!isSupabaseEnabled || !db) return [];
+    const { data, error } = await db
         .from('document_chunks')
         .select('document_name')
         .eq('tenant_id', tenantId)
@@ -147,8 +148,8 @@ async function listDocuments(tenantId, instanceId) {
  * Borra todo el conocimiento asociado a un documento.
  */
 async function deleteDocument(tenantId, instanceId, documentName) {
-    if (!isSupabaseEnabled) return false;
-    const { error } = await supabase
+    if (!isSupabaseEnabled || !db) return false;
+    const { error } = await db
         .from('document_chunks')
         .delete()
         .eq('tenant_id', tenantId)
