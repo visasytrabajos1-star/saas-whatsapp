@@ -316,7 +316,7 @@ app.use((err, req, res, next) => {
 });
 
 // --- START SERVER ---
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     logger.info(`🚀 ALEX IO SERVER V2 CORRIENDO EN PUERTO ${PORT}`);
     logger.info(`📡 WhatsApp Handler Listo...`);
     logger.info(`🧠 AI Brain Listo...`);
