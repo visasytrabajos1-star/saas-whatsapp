@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, Component } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Activity, Settings, Smartphone, Plus, Loader, AlertTriangle, CheckCircle2, X, Wand2, LogOut, MessageCircle, Send, Globe, Book, Sparkles, Sun, Moon } from 'lucide-react';
+import { Shield, Activity, Settings, Smartphone, Plus, Loader, AlertTriangle, CheckCircle2, X, Wand2, LogOut, MessageCircle, Send, Globe, Book, Sparkles, Sun, Moon, Trash2 } from 'lucide-react';
 import PromptWizard from './PromptWizard';
 import PromptCopilot from './PromptCopilot';
 import LiveChat from './LiveChat';
@@ -137,6 +137,8 @@ function SaasDashboard() {
   const [newBotName, setNewBotName] = useState('');
   const [newBotProvider, setNewBotProvider] = useState('baileys');
   const [activeTab, setActiveTab] = useState('config'); // 'config' | 'chat'
+  const [botToDelete, setBotToDelete] = useState(null);
+  const [deletingBot, setDeletingBot] = useState(false);
 
   // Soporte AI Chat
   const [isSupportOpen, setIsSupportOpen] = useState(false);
@@ -320,6 +322,36 @@ function SaasDashboard() {
       setTimeout(fetchInstances, 2000);
     } catch (error) {
       pushNotice('error', error.message || 'Fallo al reiniciar.');
+    }
+  };
+
+  const handleDeleteBot = async () => {
+    if (!botToDelete?.instanceId || deletingBot) return;
+
+    setDeletingBot(true);
+    try {
+      const { response, data } = await fetchJsonWithApiFallback('/api/saas/disconnect', {
+        method: 'POST',
+        timeoutMs: 30000,
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ instanceId: botToDelete.instanceId })
+      });
+
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || 'No se pudo eliminar el bot.');
+      }
+
+      const deletedInstanceId = botToDelete.instanceId;
+      setInstances((prev) => prev.filter((inst) => (inst.instanceId || inst.id) !== deletedInstanceId));
+      setSelected((current) => ((current?.instanceId || current?.id) === deletedInstanceId ? null : current));
+      setBotToDelete(null);
+      pushNotice('success', 'Bot eliminado correctamente. Ya puedes crear uno nuevo.');
+      setActiveTab('config');
+      setTimeout(fetchInstances, 1000);
+    } catch (error) {
+      pushNotice('error', error.message || 'Fallo al eliminar el bot.');
+    } finally {
+      setDeletingBot(false);
     }
   };
 
@@ -599,6 +631,48 @@ function SaasDashboard() {
         </div>
       )}
 
+      {botToDelete && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: T.modalOverlay }}>
+          <div className="rounded-xl p-6 w-full max-w-md" style={{ background: T.card, border: `1px solid ${T.border}` }}>
+            <div className="flex items-start gap-3 mb-4">
+              <div className="p-2 rounded-lg bg-red-500/10 text-red-400">
+                <Trash2 size={18} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">Eliminar bot</h3>
+                <p className="text-sm mt-1" style={{ color: T.textMuted }}>
+                  Vas a borrar <strong style={{ color: T.text }}>{botToDelete.name}</strong> y su sesión activa.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg p-3 mb-5 text-sm" style={{ background: T.bgAlt, border: `1px solid ${T.border}`, color: T.textMuted }}>
+              Esto también limpiará la sesión persistente y los datos operativos asociados para que puedas crear un bot nuevo sin arrastrar residuos del anterior.
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setBotToDelete(null)}
+                disabled={deletingBot}
+                className="flex-1 py-2.5 rounded-lg font-bold transition-colors"
+                style={{ background: T.inputBg, border: `1px solid ${T.border}`, color: T.text }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDeleteBot}
+                disabled={deletingBot}
+                className="flex-1 py-2.5 rounded-lg font-bold text-white transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg, #dc2626, #ef4444)' }}
+              >
+                {deletingBot ? <Loader size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {deletingBot ? 'Eliminando...' : 'Sí, eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {qrCode && (
         <div className="fixed inset-0 flex items-center justify-center z-50" style={{ background: T.modalOverlay }}>
           <div className="p-8 rounded-xl text-center max-w-sm w-full" style={{ background: T.card, border: `1px solid ${T.border}` }}>
@@ -708,6 +782,23 @@ function SaasDashboard() {
         <div className="flex-1 p-6 overflow-hidden flex flex-col">
           {selected ? (
             <div className="flex flex-col h-full w-full max-w-7xl mx-auto">
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <div>
+                  <h2 className="text-xl font-bold" style={{ color: T.text }}>{selected.name}</h2>
+                  <p className="text-sm" style={{ color: T.textMuted }}>
+                    {providerLabel} · Estado: {selected.status || 'desconocido'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setBotToDelete(selected)}
+                  className="px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all hover:scale-[1.02]"
+                  style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', color: '#f87171' }}
+                >
+                  <Trash2 size={16} />
+                  Eliminar bot
+                </button>
+              </div>
+
               {/* Tabs */}
               <div className="flex gap-1 mb-4 pb-2 flex-shrink-0 overflow-x-auto" style={{ borderBottom: `1px solid ${T.border}` }}>
                 {[

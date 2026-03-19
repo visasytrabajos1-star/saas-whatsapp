@@ -8,6 +8,7 @@ const helmet = require('helmet');
 const app = express();
 app.set('trust proxy', 1); // Trust Render's load balancer (1 hop)
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 logger.info('✅ Express trust proxy enabled');
 
@@ -316,8 +317,8 @@ app.use((err, req, res, next) => {
 });
 
 // --- START SERVER ---
-app.listen(PORT, '0.0.0.0', () => {
-    logger.info(`🚀 ALEX IO SERVER V2 CORRIENDO EN PUERTO ${PORT}`);
+app.listen(PORT, HOST, () => {
+    logger.info(`🚀 ALEX IO SERVER V2 CORRIENDO EN ${HOST}:${PORT}`);
     logger.info(`📡 WhatsApp Handler Listo...`);
     logger.info(`🧠 AI Brain Listo...`);
 

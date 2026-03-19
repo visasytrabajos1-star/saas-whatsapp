@@ -2,7 +2,27 @@ const { createClient } = require('@supabase/supabase-js');
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 // --- VALIDATE KEY ---
-const isDummyKey = (key) => !key || key.startsWith('sb_secret_') || key.startsWith('sb_publishable_');
+// Supabase's real modern keys can start with sb_secret_ / sb_publishable_.
+// Only reject clearly placeholder/example values.
+const isDummyKey = (key) => {
+    if (!key) return true;
+
+    const normalized = String(key).trim();
+    if (!normalized) return true;
+
+    const placeholderSnippets = [
+        'your_service_role_key',
+        'your_supabase_key',
+        'your_anon_key',
+        'your-anon-key',
+        'your-service-role-key',
+        'placeholder',
+        'changeme',
+        'dummy'
+    ];
+
+    return placeholderSnippets.some((snippet) => normalized.toLowerCase().includes(snippet));
+};
 
 const supabaseKey = (!isDummyKey(process.env.SUPABASE_SERVICE_ROLE_KEY) ? process.env.SUPABASE_SERVICE_ROLE_KEY : null)
     || (!isDummyKey(process.env.SUPABASE_ANON_KEY) ? process.env.SUPABASE_ANON_KEY : null)
@@ -39,4 +59,7 @@ const keySource = !isDummyKey(process.env.SUPABASE_SERVICE_ROLE_KEY) ? 'SERVICE_
         : !isDummyKey(process.env.SUPABASE_KEY) ? 'SUPABASE_KEY'
             : !isDummyKey(process.env.VITE_SUPABASE_ANON_KEY) ? 'VITE_ANON_KEY'
                 : 'NONE/DUMMY';
-console.log(`🔗 Supabase: ${supabase ? '✅ Connected' : '❌ Disabled'} (key source: ${keySource}, url: ${supabaseUrl ? 'set' : 'missing'})`);
+const adminSource = !isDummyKey(process.env.SUPABASE_SERVICE_ROLE_KEY) ? 'SERVICE_ROLE_KEY'
+    : !isDummyKey(process.env.SUPABASE_SERVICE_KEY) ? 'SUPABASE_SERVICE_KEY'
+        : 'NONE';
+console.log(`🔗 Supabase: ${supabase ? '✅ Connected' : '❌ Disabled'} (key source: ${keySource}, admin: ${supabaseAdmin ? adminSource : 'disabled'}, url: ${supabaseUrl ? 'set' : 'missing'})`);
