@@ -761,7 +761,7 @@ async function connectToWhatsApp(instanceId, config, res = null) {
 
 // --- ENDPOINTS ---
 router.post('/connect', async (req, res) => {
-    const { companyName, customPrompt, voice, maxWords, maxMessages, hubspotAccessToken, copperApiKey, copperUserEmail, provider = 'baileys', metaApiUrl, metaPhoneNumberId, metaAccessToken, dialogApiKey } = req.body || {};
+    const { companyName, customPrompt, voice, maxWords, maxMessages, hubspotAccessToken, copperApiKey, copperUserEmail, ghlApiKey, provider = 'baileys', metaApiUrl, metaPhoneNumberId, metaAccessToken, dialogApiKey } = req.body || {};
     const cleanName = String(companyName || '').trim();
 
     if (!cleanName) {
@@ -780,6 +780,7 @@ router.post('/connect', async (req, res) => {
         hubspotAccessToken: hubspotAccessToken || '',
         copperApiKey: copperApiKey || '',
         copperUserEmail: copperUserEmail || '',
+        ghlApiKey: ghlApiKey || '',
         provider,
         tenantId: effectiveTenantId,
         ownerEmail: req.tenant?.email || '',

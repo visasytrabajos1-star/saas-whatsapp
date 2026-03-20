@@ -417,6 +417,52 @@ export default function ConfigTab({ selected, configDraft, setConfigDraft, onSav
                     </div>
                 </div>
 
+                {/* CRM Integrations */}
+                <div className="rounded-xl p-5" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+                    <h3 className="font-bold text-sm mb-4 flex items-center gap-2" style={{ color: C.text }}>
+                        <Users size={16} style={{ color: C.green }} /> Integraciones CRM
+                    </h3>
+                    <div className="space-y-4">
+                        {/* HubSpot */}
+                        <div>
+                            <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: C.textDim }}>HubSpot - Private App Token</label>
+                            <input type="password" className="w-full rounded-lg p-3 text-sm focus:outline-none transition-colors"
+                                style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+                                onFocus={e => e.target.style.borderColor = C.indigo}
+                                onBlur={e => e.target.style.borderColor = C.border}
+                                value={configDraft.hubspotAccessToken || ''} onChange={e => setConfigDraft(p => ({ ...p, hubspotAccessToken: e.target.value }))} placeholder="pat-na1-xxxx-xxxx..." />
+                        </div>
+                        {/* GoHighLevel */}
+                        <div>
+                            <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: C.textDim }}>GoHighLevel - API Key (v2)</label>
+                            <input type="password" className="w-full rounded-lg p-3 text-sm focus:outline-none transition-colors"
+                                style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+                                onFocus={e => e.target.style.borderColor = C.indigo}
+                                onBlur={e => e.target.style.borderColor = C.border}
+                                value={configDraft.ghlApiKey || ''} onChange={e => setConfigDraft(p => ({ ...p, ghlApiKey: e.target.value }))} placeholder="pit-xxxx..." />
+                        </div>
+                        {/* Copper */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: C.textDim }}>Copper - API Key</label>
+                                <input type="password" className="w-full rounded-lg p-3 text-sm focus:outline-none transition-colors"
+                                    style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+                                    onFocus={e => e.target.style.borderColor = C.indigo}
+                                    onBlur={e => e.target.style.borderColor = C.border}
+                                    value={configDraft.copperApiKey || ''} onChange={e => setConfigDraft(p => ({ ...p, copperApiKey: e.target.value }))} placeholder="xxxx-xxxx-xxxx" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: C.textDim }}>Copper - User Email</label>
+                                <input type="email" className="w-full rounded-lg p-3 text-sm focus:outline-none transition-colors"
+                                    style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+                                    onFocus={e => e.target.style.borderColor = C.indigo}
+                                    onBlur={e => e.target.style.borderColor = C.border}
+                                    value={configDraft.copperUserEmail || ''} onChange={e => setConfigDraft(p => ({ ...p, copperUserEmail: e.target.value }))} placeholder="user@company.com" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 {/* Save + Support */}
                 <button onClick={onSave}
                     className="w-full py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] hover:shadow-lg"
